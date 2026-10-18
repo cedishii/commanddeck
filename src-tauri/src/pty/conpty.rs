@@ -150,6 +150,10 @@ impl ConPtyProcess {
             X: spec.cols.max(1) as i16,
             Y: spec.rows.max(1) as i16,
         };
+        // Held until CreateProcessW returns: see `pty::SPAWN_LOCK`.
+        let spawn_guard = super::SPAWN_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // SAFETY: pipe handles are valid; ConPTY duplicates what it needs.
         let hpc = unsafe { CreatePseudoConsole(size, input_read.0, output_write.0, 0)? };
         let console = PseudoConsole(hpc);
@@ -211,6 +215,7 @@ impl ConPtyProcess {
         };
         // SAFETY: the list was initialized above and is no longer needed after CreateProcessW.
         unsafe { DeleteProcThreadAttributeList(attr_list) };
+        drop(spawn_guard);
         created.map_err(spawn_err)?;
         let process = OwnedHandle(info.hProcess);
         let thread = OwnedHandle(info.hThread);

@@ -17,7 +17,11 @@ type Starter = (cols: number, rows: number, onEvent: (e: PtyEvent) => void) => P
  * one-off run). Restarting starts a fresh process; events from an old one are
  * ignored. Unmounting kills the process.
  */
-export function useTerminalSession(terminal: RefObject<TerminalHandle | null>, starter: Starter) {
+export function useTerminalSession(terminal: RefObject<TerminalHandle | null>, starter: Starter, onText?: (text: string) => void) {
+  const onTextRef = useRef(onText);
+  useEffect(() => {
+    onTextRef.current = onText;
+  }, [onText]);
   const [status, setStatus] = useState<SessionStatus>({ kind: 'idle' });
   const session = useRef<number | null>(null);
   const generation = useRef(0);
@@ -38,6 +42,7 @@ export function useTerminalSession(terminal: RefObject<TerminalHandle | null>, s
     const gen = generation.current;
     // Mutated by the event callback, possibly before `starter` resolves.
     const run = { exited: false };
+    const decoder = new TextDecoder();
     terminal.current?.reset();
     setStatus({ kind: 'starting' });
     const { cols, rows } = terminal.current?.size() ?? { cols: 80, rows: 24 };
@@ -45,7 +50,9 @@ export function useTerminalSession(terminal: RefObject<TerminalHandle | null>, s
       const info = await starterRef.current(cols, rows, (event) => {
         if (gen !== generation.current) return;
         if (event.kind === 'output') {
-          terminal.current?.write(decodeOutput(event.data));
+          const bytes = decodeOutput(event.data);
+          terminal.current?.write(bytes);
+          if (onTextRef.current) onTextRef.current(decoder.decode(bytes, { stream: true }));
         } else {
           run.exited = true;
           session.current = null;

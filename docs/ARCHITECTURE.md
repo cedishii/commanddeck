@@ -279,3 +279,24 @@ Hard constraint: a Medium-integrity process cannot create an elevated child atta
 `portable-pty` was evaluated and not used (D23).
 
 Dependencies are added to these tables as they're introduced, with reason.
+
+### Dependencies (Phase 4)
+
+| Package | Why |
+|---|---|
+| argon2 0.6 (`default-features = false`, `alloc`) | Optional app password (D9). Raw `hash_password_into` API with Argon2id at OWASP's minimum (19 MiB, t=2, p=1); record stored as `argon2id$v=19$m=…,t=…,p=…$salt$hash`. MIT/Apache-2.0 |
+| getrandom 0.3 | OS randomness for password salts and single-use grant tokens. Already in the tree through tauri, so no new version. MIT/Apache-2.0 |
+
+## 9. Phase 4 as built (security and authorization)
+
+- **`src-tauri/src/platform.rs`** — token elevation (`GetTokenInformation(TokenElevation)`), `--page`/`--handoff` launch arguments, UAC relaunch (`ShellExecuteExW` `runas`). The new instance waits (≤ 10 s) for the old one to exit before opening the WebView2 profile and database. Second module with `unsafe` (after `pty/conpty.rs`); each block has a SAFETY note.
+- **`src-tauri/src/security/`** — structural detection, never execution:
+  - `cmdline.rs` CMD splitting (quotes, `^`, `&` `&&` `||` `|`, redirections, `(` groups).
+  - `psparse.rs` PowerShell's own parser in one long-lived, windowless `powershell.exe -NoProfile` helper that only builds an AST (`Parser.ParseInput`) and reports command names and static values (`$env:X`, `$HOME`, `$true`/`$false`, constants). Any failure or timeout (8 s first, 2 s after) → no result → fail open.
+  - `paths.rs` target resolution: env vars, `..`, slashes, `\?\`, junctions/symlinks and 8.3 names via `canonicalize` on the longest existing prefix, case-insensitive. Relative and drive-relative paths resolve only when the working folder is known (one-click runs); otherwise fail open.
+  - `rules.rs` the catastrophic-operation list (SECURITY.md §6.2) with true- and false-positive suites.
+  - `grants.rs` prepared runs and single-use grants (60 s, ≤ 32 pending).
+  - `password.rs` Argon2id hashing, constant-time compare, attempt limiter.
+- **`src-tauri/src/app/exec.rs`** — values → analyze (in the run's real working folder) → `Prepared { risk, findings, needs* }` → authorize → `take_run` re-derives the binding (shell, text, working folder, elevation) and refuses any difference.
+- **`pty::SPAWN_LOCK` / `pty::spawn_std`** — every process creation is serialized. `CreatePseudoConsole` briefly makes pipe handles inheritable; a concurrent `std::process::Command` spawn (which inherits handles) captured a terminal's output pipe, so that run never reported its exit. Found by the test suite in Phase 4, covered by `std_spawns_racing_terminals_never_keep_their_pipes_open` (fails with the lock removed).
+- IPC added: `privilege_get`, `restart_elevated(page, password?)`, `bar_check`, `exec_prepare`, `exec_authorize`, `exec_run` (replaces `run_start`), `security_get`, `security_set_password`, `security_remove_password`, `security_set_policy`, `security_set_advanced`.

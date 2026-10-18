@@ -5,8 +5,8 @@ import { renderApp } from '../test/render';
 import { screenOf, typeInto } from '../test/xtermMock';
 import { commandBarInput } from './useTerminalSession';
 
-async function openCmdPage() {
-  const backend = installFakeBackend();
+async function openCmdPage(options: Parameters<typeof installFakeBackend>[0] = {}) {
+  const backend = installFakeBackend(options);
   const r = renderApp();
   await screen.findByRole('list', { name: 'Quick actions' });
   await r.user.keyboard('{Control>}2{/Control}');
@@ -140,13 +140,15 @@ describe('Run', () => {
     const list = await screen.findByRole('list', { name: 'Quick actions' });
     await r.user.click(within(list).getByRole('button', { name: 'Run View network configuration' }));
     const dialog = await screen.findByRole('dialog', { name: 'Run: View network configuration' });
-    await waitFor(() => { expect(backend.callsTo('run_start')).toHaveLength(1); });
+    await waitFor(() => { expect(backend.callsTo('exec_run')).toHaveLength(1); });
     return { ...r, backend, dialog };
   }
 
   it('runs a catalog command by id and shows output and exit code', async () => {
     const { backend, dialog } = await runFromHome();
-    expect(backend.callsTo('run_start')[0]).toMatchObject({ id: 'cmd.ipconfig.all' });
+    expect(backend.callsTo('exec_prepare')).toEqual([{ id: 'cmd.ipconfig.all', params: {} }]);
+    expect(backend.callsTo('exec_run')[0]).toMatchObject({ prepareId: 'prep-1', grant: null });
+    expect(within(dialog).getByText('ipconfig /all')).toBeInTheDocument();
     backend.output(1, 'Windows IP Configuration\r\n');
     expect(screenOf('Output of View network configuration')).toContain('Windows IP Configuration');
     backend.exit(1, 0);
@@ -164,18 +166,82 @@ describe('Run', () => {
     const { user, backend, dialog } = await runFromHome();
     await user.click(await within(dialog).findByRole('button', { name: 'Stop' }));
     await waitFor(() => { expect(backend.callsTo('pty_close')).toEqual([{ sessionId: 1 }]); });
+    // Run again prepares a fresh run (a prepared run is single use).
     await user.click(within(dialog).getByRole('button', { name: 'Run again' }));
-    await waitFor(() => { expect(backend.callsTo('run_start')).toHaveLength(2); });
-    await user.click(within(dialog).getByRole('button', { name: 'Close output' }));
+    await waitFor(() => { expect(backend.callsTo('exec_run')).toHaveLength(2); });
+    expect(backend.callsTo('exec_prepare')).toHaveLength(2);
+    expect(backend.callsTo('exec_run')[1]).toMatchObject({ prepareId: 'prep-2' });
+    const again = await screen.findByRole('dialog', { name: 'Run: View network configuration' });
+    await user.click(within(again).getByRole('button', { name: 'Close output' }));
     await waitFor(() => { expect(backend.sessions[1]?.open).toBe(false); });
   });
 
   it('shows the backend refusal instead of running', async () => {
     const backend = installFakeBackend();
-    backend.failNext('run_start', { kind: 'conflict', message: 'This changes your system.' });
+    backend.failNext('exec_run', { kind: 'conflict', message: 'This run expired or was already used. Start it again.' });
     const { user } = renderApp();
     const list = await screen.findByRole('list', { name: 'Quick actions' });
     await user.click(within(list).getByRole('button', { name: 'Run View network configuration' }));
-    expect(await screen.findByText("Couldn't run: This changes your system.")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't run: This run expired or was already used. Start it again.")).toBeInTheDocument();
+  });
+});
+
+describe('Command bar check (SECURITY.md §6.2)', () => {
+  const finding = { operation: 'Delete a folder and everything in it', target: 'C:\\ (the root of a drive)', consequence: 'Deletes everything on the drive.' };
+  const risky = 'rd /s /q C:\\';
+
+  it('sends ordinary lines immediately and exactly as typed', async () => {
+    const { user, backend, bar } = await openCmdPage();
+    await user.type(bar, 'ipconfig /flushdns{Enter}');
+    await waitFor(() => { expect(backend.sessions[0]?.written).toBe('ipconfig /flushdns\r'); });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(backend.callsTo('bar_check')).toEqual([{ shell: 'cmd', text: 'ipconfig /flushdns' }]);
+  });
+
+  it('asks once before an identified high-impact line, then sends the original text unchanged', async () => {
+    const { user, backend, bar } = await openCmdPage({ barFindings: { [risky]: [finding] } });
+    fireEvent.change(bar, { target: { value: risky } });
+    await user.type(bar, '{Enter}');
+    const dialog = await screen.findByRole('dialog', { name: 'Check before running' });
+    expect(dialog).toHaveTextContent('Delete a folder and everything in it: C:\\ (the root of a drive)');
+    expect(backend.sessions[0]?.written).toBe('');
+    await user.click(within(dialog).getByRole('button', { name: 'Run anyway' }));
+    await waitFor(() => { expect(backend.sessions[0]?.written).toBe(`${risky}\r`); });
+    expect(bar).toHaveValue('');
+
+    // The same unchanged line isn't asked about again in this session.
+    fireEvent.change(bar, { target: { value: risky } });
+    await user.type(bar, '{Enter}');
+    await waitFor(() => { expect(backend.sessions[0]?.written).toBe(`${risky}\r${risky}\r`); });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('Edit keeps the text, Cancel clears it, and neither sends anything', async () => {
+    const { user, backend, bar } = await openCmdPage({ barFindings: { [risky]: [finding] } });
+    fireEvent.change(bar, { target: { value: risky } });
+    await user.type(bar, '{Enter}');
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Edit' }));
+    expect(bar).toHaveValue(risky);
+    await waitFor(() => { expect(bar).toHaveFocus(); });
+    await user.type(bar, '{Enter}');
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    expect(bar).toHaveValue('');
+    expect(backend.sessions[0]?.written).toBe('');
+  });
+
+  it('fails open: if the check itself fails, the line is sent', async () => {
+    const { user, backend, bar } = await openCmdPage();
+    backend.failNext('bar_check', { kind: 'internal', message: 'boom' });
+    await user.type(bar, 'dir{Enter}');
+    await waitFor(() => { expect(backend.sessions[0]?.written).toBe('dir\r'); });
+  });
+
+  it('hints at Restart as administrator when Windows refuses access, without touching the output', async () => {
+    const { user, backend, panel } = await openCmdPage();
+    backend.output(1, 'Access is denied.\r\n');
+    expect(await within(panel).findByText(/Windows refused access/)).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Restart as administrator…' }));
+    expect(screen.getByRole('dialog', { name: 'Restart as administrator?' })).toHaveTextContent('Windows refused access in the terminal');
+    expect(screenOf('CMD terminal')).toContain('Access is denied.');
   });
 });

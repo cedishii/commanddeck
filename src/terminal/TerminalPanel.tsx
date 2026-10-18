@@ -5,7 +5,8 @@ import { useSettings } from '../app/settings';
 import { buttonStyles } from '../components/ui/Modal';
 import { SHELL_LABEL, type Shell } from '../domain/command';
 import { api } from '../ipc/api';
-import type { ShellKind } from '../ipc/types';
+import type { Finding, ShellKind } from '../ipc/types';
+import { HighImpactDialog } from './HighImpactDialog';
 import { commandBarInput, useTerminalSession, type SessionStatus } from './useTerminalSession';
 import { XtermView, type TerminalHandle } from './XtermView';
 
@@ -43,7 +44,7 @@ const iconButton = 'inline-flex h-7 w-7 items-center justify-center rounded-md t
 
 /** A live shell session (ConPTY) with a command bar. */
 export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPendingConsumed }: TerminalPanelProps) {
-  const { openSearch, navigate } = useAppContext();
+  const { openSearch, navigate, elevated, restartAsAdmin } = useAppContext();
   const { settings, loaded } = useSettings();
   const searchCode = `Key${settings.searchShortcut.toUpperCase()}`;
   const terminal = useRef<TerminalHandle | null>(null);
@@ -59,7 +60,15 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
     (cols: number, rows: number, onEvent: Parameters<typeof api.openSession>[3]) => api.openSession(kind, cols, rows, onEvent),
     [kind],
   );
-  const session = useTerminalSession(terminal, starter);
+  // Windows' own refusal, shown as-is in the terminal; we add a hint (never intercept).
+  const [accessHint, setAccessHint] = useState(false);
+  const tail = useRef('');
+  const onText = useCallback((text: string) => {
+    const window = (tail.current + text).slice(-400);
+    tail.current = window.slice(-60);
+    if (/Access is denied|requires elevation|UnauthorizedAccess|Access to the path .* is denied/i.test(window)) setAccessHint(true);
+  }, []);
+  const session = useTerminalSession(terminal, starter, onText);
   const running = session.status.kind === 'running';
 
   useEffect(() => {
@@ -118,10 +127,42 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
     [openSearch, navigate, searchCode],
   );
 
-  const send = () => {
-    if (!bar.trim() || !running) return;
-    if (session.write(commandBarInput(bar))) setBar('');
+  // Lines the user already confirmed in this session aren't asked about again (§6.2). Any edit re-checks.
+  const confirmed = useRef(new Set<string>());
+  const sessionPid = session.status.kind === 'running' ? session.status.pid : null;
+  useEffect(() => {
+    confirmed.current.clear();
+  }, [sessionPid]);
+  const [checking, setChecking] = useState(false);
+  const [review, setReview] = useState<{ text: string; findings: readonly Finding[] } | null>(null);
+
+  const deliver = (text: string) => {
+    if (session.write(commandBarInput(text))) setBar((current) => (current === text ? '' : current));
   };
+
+  const send = () => {
+    const text = bar;
+    if (!text.trim() || !running || checking) return;
+    if (confirmed.current.has(text)) {
+      deliver(text);
+      return;
+    }
+    setChecking(true);
+    api.checkCommandBar(kind, text).then(
+      (analysis) => {
+        setChecking(false);
+        if (analysis.findings.length > 0) setReview({ text, findings: analysis.findings });
+        else deliver(text);
+      },
+      () => {
+        // Fail open: a check that can't run never stops the user.
+        setChecking(false);
+        deliver(text);
+      },
+    );
+  };
+
+  const focusBar = () => { window.setTimeout(() => { barRef.current?.focus(); }, 0); };
 
   const onBarKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -216,12 +257,35 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
             placeholder={running ? `Type a command for ${EXECUTABLE[kind]} and press Enter (Shift+Enter: new line)` : 'Start the session to type commands'}
             className="min-h-8 flex-1 resize-none rounded-md border border-border bg-code-bg px-2 py-1.5 font-mono text-[13px] text-code-fg disabled:opacity-60"
           />
-          <button type="button" className={buttonStyles.primary} disabled={!running || !bar.trim()} onClick={send}>Run</button>
+          <button type="button" className={buttonStyles.primary} disabled={!running || !bar.trim() || checking} onClick={send}>Run</button>
         </div>
+        {accessHint && elevated === false ? (
+          <p role="status" className="mx-3 mb-2 flex flex-wrap items-center gap-2 rounded-md bg-risk2-bg px-2 py-1 text-xs text-risk2-fg">
+            Windows refused access. Some commands need administrator rights.
+            <button type="button" className="font-medium underline" onClick={() => { restartAsAdmin('Windows refused access in the terminal. Some commands only work with administrator rights.'); }}>
+              Restart as administrator…
+            </button>
+            <button type="button" aria-label="Dismiss hint" className="ml-auto" onClick={() => { setAccessHint(false); }}>✕</button>
+          </p>
+        ) : null}
         <p className="px-3 pb-2 text-xs text-muted">
-          This is the real {EXECUTABLE[kind]}. CommandDeck doesn’t check or change what you type here. In the terminal: Ctrl+Shift+E moves to the command bar, Ctrl+Shift+{settings.searchShortcut.toUpperCase()} searches.
+          This is the real {EXECUTABLE[kind]}. Typing in the terminal isn’t checked or changed. The command bar asks once before a few well-known operations that can wreck Windows or your files. In the terminal: Ctrl+Shift+E moves to the command bar, Ctrl+Shift+{settings.searchShortcut.toUpperCase()} searches.
         </p>
       </div>
+      {review ? (
+        <HighImpactDialog
+          text={review.text}
+          findings={review.findings}
+          onRunAnyway={() => {
+            confirmed.current.add(review.text);
+            setReview(null);
+            deliver(review.text);
+            focusBar();
+          }}
+          onEdit={() => { setReview(null); focusBar(); }}
+          onCancel={() => { setReview(null); setBar(''); focusBar(); }}
+        />
+      ) : null}
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { House, Search, Settings, SquareTerminal, Terminal, type LucideIcon } from 'lucide-react';
+import { House, Search, Settings, ShieldCheck, SquareTerminal, Terminal, User, Zap, type LucideIcon } from 'lucide-react';
 import logoUrl from '../assets/logo-64.png';
 import { PAGES, type PageId } from '../app/pages';
 import { searchKeyLabel, useSettings } from '../app/settings';
@@ -7,6 +7,10 @@ interface NavBarProps {
   readonly current: PageId;
   readonly onNavigate: (page: PageId) => void;
   readonly onSearch?: () => void;
+  /** Token state; null while unknown. */
+  readonly elevated?: boolean | null;
+  readonly onRestartAdmin?: () => void;
+  readonly advancedMode?: boolean;
 }
 
 const ICONS: Record<PageId, LucideIcon> = {
@@ -41,19 +45,38 @@ function NavButton({ page, current, onNavigate }: { page: PageId; current: PageI
  * Placeholder for the privilege indicator. Real detection via the Windows
  * token arrives in Phase 4. Until then it says so instead of guessing.
  */
-function PrivilegeBadge() {
+/** The true token state, read from Windows by the backend. Admin is shown, not warned about. */
+function PrivilegeBadge({ elevated, onRestart }: { elevated: boolean | null; onRestart: (() => void) | undefined }) {
+  if (elevated === null) {
+    return <span className="inline-flex h-6 items-center px-2 text-xs text-muted" data-testid="privilege-badge">Checking…</span>;
+  }
+  if (elevated) {
+    return (
+      <span
+        className="inline-flex h-6 items-center gap-1 rounded-md bg-risk2-bg px-2 text-xs font-medium text-risk2-fg"
+        title="CommandDeck and everything it starts run with administrator rights. Close and reopen the app to go back to standard user."
+        data-testid="privilege-badge"
+      >
+        <ShieldCheck aria-hidden size={13} />
+        Administrator
+      </span>
+    );
+  }
   return (
-    <span
-      className="inline-flex h-6 items-center rounded-md border border-dashed border-border px-2 text-xs text-muted"
-      title="Administrator detection arrives in Phase 4"
+    <button
+      type="button"
+      onClick={onRestart}
+      className="inline-flex h-6 items-center gap-1 rounded-md border border-border px-2 text-xs text-muted hover:text-fg"
+      title="Running as a standard user. Click to restart as administrator."
       data-testid="privilege-badge"
     >
-      Privilege: not checked yet
-    </span>
+      <User aria-hidden size={13} />
+      Standard user
+    </button>
   );
 }
 
-export function NavBar({ current, onNavigate, onSearch }: NavBarProps) {
+export function NavBar({ current, onNavigate, onSearch, elevated = null, onRestartAdmin, advancedMode = false }: NavBarProps) {
   const searchKey = useSettings().settings.searchShortcut;
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
@@ -78,8 +101,17 @@ export function NavBar({ current, onNavigate, onSearch }: NavBarProps) {
               <kbd className="font-mono text-xs">{searchKeyLabel(searchKey)}</kbd>
             </button>
           ) : null}
-          {/* Advanced Mode badge slot (Phase 4) */}
-          <PrivilegeBadge />
+          {advancedMode ? (
+            <span
+              className="inline-flex h-6 items-center gap-1 rounded-md bg-accent-soft px-2 text-xs font-medium text-fg"
+              title="Advanced Mode: no confirmations for meaningful changes; custom scripts run with one click. High-impact operations still ask."
+              data-testid="advanced-badge"
+            >
+              <Zap aria-hidden size={13} />
+              Advanced Mode
+            </span>
+          ) : null}
+          <PrivilegeBadge elevated={elevated} onRestart={onRestartAdmin} />
           <NavButton page="settings" current={current} onNavigate={onNavigate} />
         </div>
       </nav>

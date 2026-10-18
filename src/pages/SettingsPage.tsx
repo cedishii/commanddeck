@@ -1,10 +1,12 @@
 import { Copy, Download, History, Monitor, Moon, RotateCcw, Sun, Trash2, Upload, type LucideIcon } from 'lucide-react';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useState } from 'react';
 import { useAppContext } from '../app/context';
 import { PAGES } from '../app/pages';
 import { searchKeyLabel, useSettings } from '../app/settings';
 import { useTheme, type ThemePreference } from '../app/theme';
 import { PageHeader } from '../components/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Toggle } from '../components/ui/Field';
 import { ConfirmDialog, Modal, buttonStyles } from '../components/ui/Modal';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../ipc/api';
@@ -12,16 +14,7 @@ import { BackendError } from '../ipc/client';
 import { SHELL_LABEL } from '../domain/command';
 import type { Density, HistoryEntry, QuickActionLimit, RetentionDays, SearchKey, SettingsPatch } from '../ipc/types';
 import { copyText } from '../lib/clipboard';
-
-function Card({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
-  return (
-    <section className="rounded-lg border border-border bg-surface p-5">
-      <h2 className="font-semibold">{title}</h2>
-      {description ? <p className="mt-0.5 text-sm text-muted">{description}</p> : null}
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
+import { SecuritySettings } from './SecuritySettings';
 
 function Segmented<T extends string | number>({
   legend,
@@ -54,18 +47,6 @@ function Segmented<T extends string | number>({
         ))}
       </div>
     </fieldset>
-  );
-}
-
-function Toggle({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <label className="flex cursor-pointer items-start gap-3">
-      <input type="checkbox" checked={checked} onChange={(e) => { onChange(e.target.checked); }} className="mt-1 h-4 w-4 accent-[var(--cd-accent)]" />
-      <span>
-        <span className="block text-sm font-medium">{label}</span>
-        <span className="block text-sm text-muted">{description}</span>
-      </span>
-    </label>
   );
 }
 
@@ -294,6 +275,8 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <SecuritySettings />
+
       <Card title="Run history" description="Which commands you ran with one click, when, and their exit code. Output is never saved.">
         <div className="space-y-4">
           <Segmented legend="Keep history" name="historyRetentionDays" value={settings.historyRetentionDays} options={RETENTION_OPTIONS} onChange={setRetention} />
@@ -347,7 +330,7 @@ export function SettingsPage() {
 
       <Card title="About">
         <dl className="grid grid-cols-[8rem_1fr] gap-y-1 text-sm">
-          <dt className="text-muted">Version</dt><dd>0.3.0 (Phase 3: terminal and running commands)</dd>
+          <dt className="text-muted">Version</dt><dd>0.5.0 (safety checks, administrator mode and settings)</dd>
           <dt className="text-muted">Built-in commands</dt><dd>{startup ? `${startup.builtinCount}, each verified against Windows and Microsoft docs` : '…'}</dd>
           <dt className="text-muted">Author</dt><dd>Cedrick Kaneko</dd>
           <dt className="text-muted">Privacy</dt><dd>Runs entirely on this PC. No accounts, telemetry or network access.</dd>
@@ -398,8 +381,8 @@ export function SettingsPage() {
             }, fail);
           }}
         >
-          <p>Theme, density, terminal, shortcut and history settings go back to defaults, and Home gets the default quick actions again.</p>
-          <p className="mt-2 text-muted">Your custom commands, favorites, aliases and run history are kept.</p>
+          <p>Theme, density, terminal, shortcut, confirmation and history settings go back to defaults, and Home gets the default quick actions again.</p>
+          <p className="mt-2 text-muted">Your custom commands, favorites, aliases, run history, app password and Advanced Mode are kept.</p>
         </ConfirmDialog>
       ) : null}
     </div>

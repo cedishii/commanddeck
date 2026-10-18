@@ -87,6 +87,35 @@ pub struct Settings {
     pub search_shortcut: String,
     /// 0 = don't keep history, -1 = keep forever, otherwise days.
     pub history_retention_days: i64,
+    /// Ask once before L2 runs (meaningful changes). Advanced Mode skips it.
+    pub confirm_meaningful: bool,
+}
+
+/// Which actions need the app password, when one is set (SECURITY.md §8).
+/// Changing security settings and removing the password always need it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasswordPolicy {
+    pub high_impact: bool,
+    pub restart_as_admin: bool,
+    pub advanced_mode: bool,
+}
+
+impl Default for PasswordPolicy {
+    fn default() -> Self {
+        Self {
+            high_impact: true,
+            restart_as_admin: true,
+            advanced_mode: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecurityState {
+    pub password_hash: Option<String>,
+    pub policy: PasswordPolicy,
+    pub advanced_mode: bool,
 }
 
 impl Default for Settings {
@@ -100,6 +129,7 @@ impl Default for Settings {
             auto_start_sessions: true,
             search_shortcut: "k".into(),
             history_retention_days: 30,
+            confirm_meaningful: true,
         }
     }
 }
@@ -115,6 +145,7 @@ pub struct SettingsPatch {
     pub auto_start_sessions: Option<bool>,
     pub search_shortcut: Option<String>,
     pub history_retention_days: Option<i64>,
+    pub confirm_meaningful: Option<bool>,
 }
 
 pub const FONT_SIZES: std::ops::RangeInclusive<u32> = 11..=20;
@@ -369,10 +400,54 @@ impl Store {
             history_retention_days: self
                 .setting("historyRetentionDays", |n: &i64| RETENTION_DAYS.contains(n))?
                 .unwrap_or(d.history_retention_days),
+            confirm_meaningful: self
+                .setting("confirmMeaningful", |_: &bool| true)?
+                .unwrap_or(d.confirm_meaningful),
         })
     }
 
+    // ---- security state (kept by "Reset preferences") ------------------------------
+
+    /// Password hash, policy and Advanced Mode. Malformed values fall back to "off".
+    pub fn security(&self) -> AppResult<SecurityState> {
+        Ok(SecurityState {
+            password_hash: self
+                .setting_raw("security.passwordHash")?
+                .filter(|h| h.starts_with("argon2id$")),
+            policy: self
+                .setting("security.policy", |_: &PasswordPolicy| true)?
+                .unwrap_or_default(),
+            advanced_mode: self
+                .setting("security.advancedMode", |_: &bool| true)?
+                .unwrap_or(false),
+        })
+    }
+
+    pub fn set_password_hash(&self, hash: Option<&str>) -> AppResult<()> {
+        match hash {
+            Some(h) => self.set_setting_raw("security.passwordHash", h),
+            None => {
+                self.conn.execute(
+                    "DELETE FROM settings WHERE key = 'security.passwordHash'",
+                    [],
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn set_password_policy(&self, policy: &PasswordPolicy) -> AppResult<()> {
+        self.set_setting("security.policy", policy)
+    }
+
+    pub fn set_advanced_mode(&self, on: bool) -> AppResult<()> {
+        self.set_setting("security.advancedMode", &on)
+    }
+
     pub fn update_settings(&self, patch: &SettingsPatch) -> AppResult<Settings> {
+        if let Some(v) = patch.confirm_meaningful {
+            self.set_setting("confirmMeaningful", &v)?;
+        }
         if let Some(size) = patch.terminal_font_size {
             if !FONT_SIZES.contains(&size) {
                 return Err(AppError::invalid(
@@ -821,7 +896,8 @@ impl Store {
     /// Resets settings and the Home layout. Keeps custom commands, favorites and aliases.
     pub fn reset_preferences(&mut self) -> AppResult<()> {
         let tx = self.conn.transaction()?;
-        tx.execute("DELETE FROM settings", [])?;
+        // Security state (password, its policy, Advanced Mode) isn't a preference.
+        tx.execute("DELETE FROM settings WHERE key NOT LIKE 'security.%'", [])?;
         tx.execute("DELETE FROM quick_actions", [])?;
         tx.commit()?;
         Ok(())
@@ -863,6 +939,7 @@ mod tests {
                 auto_start_sessions: Some(false),
                 search_shortcut: Some("p".into()),
                 history_retention_days: Some(-1),
+                confirm_meaningful: Some(false),
             })
             .unwrap();
         assert_eq!(
@@ -876,6 +953,7 @@ mod tests {
                 auto_start_sessions: false,
                 search_shortcut: "p".into(),
                 history_retention_days: -1,
+                confirm_meaningful: false,
             }
         );
     }

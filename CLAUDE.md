@@ -52,12 +52,18 @@ D1–D7, D9 and D13 were proposed in Phase 0 and accepted on 2026-10-18 when the
 | D20 | Catalog verification = automated checks against the real Windows install (program/cmdlet/parameter/flag existence) + doc URLs resolving + admin probes of harmless read-only commands | ✅ 2026-10-18 (Phase 2) |
 | D21 | Personal labels on Home are display-only; personal aliases only affect search | ✅ 2026-10-18 (Phase 2) |
 | D22 | First run seeds 8 quick actions (of 10) so adding works immediately | ✅ 2026-10-18 (Phase 2) |
-| D23 | **ConPTY directly via the `windows` crate**, not `portable-pty`: processes are created SUSPENDED, put in a KILL_ON_JOB_CLOSE Job Object, then resumed, so no child can escape cleanup. Also avoids a dependency unreleased since Feb 2025. All `unsafe` is confined to `src-tauri/src/pty/conpty.rs` | ✅ 2026-10-18 (Phase 3) |
+| D23 | **ConPTY directly via the `windows` crate**, not `portable-pty`: processes are created SUSPENDED, put in a KILL_ON_JOB_CLOSE Job Object, then resumed, so no child can escape cleanup. Also avoids a dependency unreleased since Feb 2025. All `unsafe` is confined to `src-tauri/src/pty/conpty.rs` (and, since Phase 4, `platform.rs` for elevation) | ✅ 2026-10-18 (Phase 3) |
 | D24 | One-off Runs also use ConPTY (terminal-correct output, colors, Ctrl+C). Consequence: stdout and stderr arrive merged, like in any console | ✅ 2026-10-18 (Phase 3) |
-| D25 | Until Phase 4: one-click Run only for built-in, L1, placeholder-free commands (`app::run_block_reason`, enforced in the backend). Everything else uses "Open in terminal" | ✅ 2026-10-18 (Phase 3) |
+| D25 | ~~Until Phase 4: one-click Run only for built-in, L1, placeholder-free commands~~ Superseded by D30 on 2026-10-19 | ✅ 2026-10-18 (Phase 3) |
 | D26 | "Open in terminal" fills the command bar and focuses it; it never sends anything to the shell by itself | ✅ 2026-10-18 (Phase 3) |
 | D27 | Terminal keyboard: every key goes to the shell except Ctrl+Shift+K (search), Ctrl+Shift+E (to command bar), Ctrl+Shift+1/2/3 (pages), Ctrl+C with a selection / Ctrl+Shift+C (copy), Ctrl+V / Ctrl+Shift+V (paste). Global shortcuts and dialog key handling ignore events from `[data-terminal]` | ✅ 2026-10-18 (Phase 3) |
 | D28 | All pages stay mounted (hidden when inactive) so sessions survive navigation. A shell session starts the first time its page is shown | ✅ 2026-10-18 (Phase 3) |
+| D29 | Command-bar check is advisory and runs in the send path: Rust analyzes (CMD tokenizer; PowerShell AST from a long-lived `powershell.exe -NoProfile` helper that never executes), the UI shows one dialog, then sends the original text. Fails open. A confirmed line isn't re-asked in that session | ✅ 2026-10-19 (Phase 4) |
+| D30 | One-click runs: `exec_prepare` → `exec_authorize` → `exec_run` (replaces `run_start` and D25). Grants single use, 60 s, bound to (shell, resolved text, working folder, elevation). Risk = max(catalog/declared, L3 if the analyzer finds a catastrophic op). L3 always confirms with a typed phrase (first value, else `RUN`); L2 confirms per the `confirmMeaningful` setting unless Advanced Mode | ✅ 2026-10-19 (Phase 4) |
+| D31 | Placeholder values are validated per shell and position (quoted/bare) and **refused, never escaped**: no quotes, `%`, `!`, `^`, backtick, `$`, smart quotes, control chars, leading `-`/`/`; bare values no spaces/separators. One-click runs are analyzed in their real working folder (home), so relative targets count | ✅ 2026-10-19 (Phase 4) |
+| D32 | Admin-required commands never run unelevated via one-click Run; the UI offers restart / copy / cancel | ✅ 2026-10-19 (Phase 4) |
+| D33 | App password: Argon2id raw API (19 MiB, t=2, p=1), stored under `security.*` settings keys (kept by Reset preferences). Policy toggles (default on): high-impact runs, restart as admin, enabling Advanced Mode; changing password/policy always needs it. In-memory limiter (3 free, then 2 s doubling to 5 min). Advanced Mode persisted; disabling never needs the password | ✅ 2026-10-19 (Phase 4) |
+| D34 | All process creation goes through `pty::SPAWN_LOCK` (`pty::spawn_std` for std spawns) to stop pipe-handle inheritance races with ConPTY | ✅ 2026-10-19 (Phase 4) |
 
 ## 4. Open questions (do not decide unilaterally)
 
@@ -91,14 +97,16 @@ commanddeck/
     error.rs           ✓ AppError → { kind, message, fields? }
     catalog/           ✓ mod.rs (types, load, validation, multi-step), search.rs (ranking)
     store/             ✓ SQLite: migrations, settings, Home, favorites, recents, aliases, custom
-    pty/               ✓ mod.rs (shells, command lines, PtyManager, events), conpty.rs (ConPTY + Job Objects; the only unsafe code)
-    security/ platform/  Phase 4
+    pty/               ✓ mod.rs (shells, command lines, PtyManager, events), conpty.rs (ConPTY + Job Objects; unsafe, with platform.rs)
+    platform.rs        ✓ token elevation, launch args, UAC relaunch (second module with `unsafe`)
+    security/          ✓ cmdline.rs, psparse.rs (PowerShell AST helper), paths.rs, rules.rs, grants.rs, password.rs
+    app/exec.rs        ✓ values → analyze → prepare / authorize / take_run; security settings
   src/terminal/        ✓ XtermView (xterm.js), useTerminalSession, TerminalPanel (+ command bar), RunPanel
   src-tauri/capabilities/  ✓ core:default only
 ```
 
 Frontend: React 19, TypeScript strict, Vite, Tailwind CSS v4 over CSS-variable tokens, lucide-react icons, @xterm/xterm 6 + addon-fit.
-Backend now: Rust stable (MSVC), tauri 2, tauri-plugin-opener (Rust-side only), serde/serde_json, rusqlite (bundled SQLite), thiserror, windows 0.62 (ConPTY/Job Objects), base64. Later: argon2.
+Backend now: Rust stable (MSVC), tauri 2, tauri-plugin-opener (Rust-side only), serde/serde_json, rusqlite (bundled SQLite), thiserror, windows 0.62 (ConPTY/Job Objects/elevation), base64, argon2 0.6 (raw API), getrandom 0.3.
 Versions are pinned in lockfiles; verify before upgrading.
 
 Data lives in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`. **Debug builds only:** set `COMMANDDECK_DATA_DIR` to use a throwaway folder for testing (release builds ignore it).
@@ -185,13 +193,12 @@ A phase is complete only when its acceptance criteria are **verified** (tests ru
 - **Phase 1 complete and verified 2026-10-18.**
 - **Phase 2 complete and verified 2026-10-18** (ROADMAP.md table, TESTING.md): 69 verified built-in commands, Rust search, SQLite persistence, Home management, favorites, recents, personal aliases, custom commands with import/export, Ctrl+K palette. Version 0.2.0.
 - v0.2.0 is installed per-user on the owner's PC (`%LOCALAPPDATA%\CommandDeck`), upgraded in place from 0.1.0 with owner approval on 2026-10-18. The owner's real data now lives in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`. Never test against it.
-- Still not implemented: privilege detection, authorization (Phase 4).
 - Commit only with owner approval.
 - **Phase 3 complete and verified 2026-10-18** (ROADMAP.md table, TESTING.md): real cmd.exe / Windows PowerShell sessions over ConPTY with xterm.js, command bar, Open in terminal, one-click Run for L1 built-ins, process-tree cleanup. Version 0.3.0 (built; install needs owner OK).
-- **Phase 4 started, then paused by the owner (2026-10-18).** Unfinished `src-tauri/src/platform.rs` is untracked and not compiled in; nothing else of Phase 4 exists.
+- **Phase 4 complete and verified 2026-10-19** (ROADMAP.md table, TESTING.md): privilege detection, Restart as administrator, admin-needed dialog, structural command-bar checks, prepare/authorize/run grants with value validation, Advanced Mode, optional Argon2id password. Accepting a real UAC prompt is not yet verified (needs the owner). Version 0.5.0 (Phases 4 + 5).
 - **Phase 5 complete and verified 2026-10-19** (ROADMAP.md table, TESTING.md): density, terminal font size / screen reader / auto-start, search shortcut choice, run history with retention, reset, malformed-settings recovery. Backend was pushed as WIP `bffb541`; frontend finished 2026-10-19.
 - Repo is public at github.com/cedishii/commanddeck (MIT). Pushing still needs explicit owner approval each session.
-- **Next:** finish Phase 4 (privilege detection, Restart as administrator, risk analyzer + structural command-bar checks, grants, Advanced Mode, optional app password), then Phase 6. Ask the owner before starting either.
+- **Next: Phase 6** (integration & regression: test matrix incl. a real elevated session, Windows 10 VM check, failure scenarios, production build). Ask the owner before starting it.
 - Environment (verified 2026-10-18): Windows 11 build 26300 x64, Node 24.20.0, npm 11.19.0, git 2.55, WebView2 155, Windows PowerShell 5.1, **VS 2022 Build Tools 17.14.42** (`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`, VC x64 tools), **Windows SDK 10.0.26100.0**, **rustup 1.29.1 / rustc + cargo 1.99.1 stable-x86_64-pc-windows-msvc** (user-level, `%USERPROFILE%\.cargo\bin` on user PATH; clippy and rustfmt included). Not installed: PowerShell 7 (optional).
 - Terminals opened before the Rust install won't have cargo on PATH. Open a new terminal or VS Code window.
 
@@ -199,7 +206,8 @@ A phase is complete only when its acceptance criteria are **verified** (tests ru
 
 - Unverified: MSI install, manual Tab-order pass in the native window by a human, live OS theme switch while running, PowerShell 7 (`pwsh`) sessions (not installed on the dev PC; detection is tested).
 - Terminals: stdout and stderr are merged (ConPTY). ConPTY's win32-input-mode isn't used (xterm.js speaks plain VT), so a few rare key combinations may differ from Windows Terminal. One session per shell page (no tabs yet). xterm's screen-reader mode is a setting (off by default).
-- The command bar has **no** high-impact detection yet (Phase 4). Until then it's exactly equivalent to typing.
+- Command-bar detection is deliberately incomplete (SECURITY.md §11): runtime values, scripts, encoded commands and lines typed into interactive programs (e.g. `clean` inside diskpart) aren't followed.
+- Unverified: accepting a real UAC prompt for Restart as administrator (the relaunch/handoff code is tested up to `ShellExecuteExW`).
 - Programs choose ANSI colors blindly. The terminal enforces minimumContrastRatio 4.5 so text stays readable in both themes, which slightly alters some program colors.
 - e2e test gotcha: xterm.js has its own hidden `<textarea>`. Select the command bar by its label, not `textarea`.
 - Search has no typo tolerance (e.g. "ipconfg" finds nothing). Add only if relevance tests show a need.

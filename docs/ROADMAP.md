@@ -93,7 +93,23 @@ PTY spike (portable-pty vs direct ConPTY) → session manager with Job Objects; 
 
 Key criteria from D14: terminal-pane keystrokes reach the shell unmodified (verified with history recall, tab completion, PSReadLine, `Read-Host`, `set /p`, Ctrl+C). The command bar writes exactly the typed text into the PTY (byte-for-byte test). Only the documented app shortcuts are intercepted while the terminal has focus.
 
-## Phase 4 — Security & authorization ☐
+## Phase 4 — Security & authorization ✅ (2026-10-19)
+
+| Criterion | How it was verified |
+|-----------|---------------------|
+| Privilege detection; true token state in the header | Rust test against `whoami /groups`; real app shows `Standard user` |
+| Restart as administrator: plain-language confirmation, UAC decline keeps running, page handed over, nothing auto-runs | Vitest (dialog text, declined UAC, page argument, password gate); real app: the password gate refuses before any UAC prompt. **Not done:** accepting a real UAC prompt (needs the owner at the PC) |
+| Admin-needed dialog: restart / copy / cancel; admin alone never prompts | Rust `admin_commands_need_elevation_and_never_run_unelevated`; Vitest; real app (`sfc /scannow` refused unelevated) |
+| Command bar false-positive suite (sfc, DISM, flushdns, services, deleting ordinary/temp folders, `-WhatIf`, read-only listings, echo of a dangerous line) → no prompt | `security::rules` tests (20 CMD + 13 PowerShell lines); real app |
+| True-positive suite (format, scripted diskpart clean, recursive delete of root/Windows/System32/profile via aliases, env vars, `..`, junctions, 8.3, `cmd /c`, shadow copies, bcdedit writes, Defender/firewall off, takeown/icacls on Windows, `reg delete HKLM\SYSTEM`) → exactly one prompt | `security::rules` tests (20 CMD + 18 PowerShell lines); real app (`rd /s /q C:\`, `rm -r -fo $env:windir`) |
+| Unparseable lines sent without prompt; sent bytes = typed bytes | Rust `unparseable_powershell_fails_open`; Vitest (fail open, exact bytes, Run anyway sends the original) |
+| Prepare/authorize/run grants; bypass tests (skipped step, replay, forged/swapped grant, expiry, edited after authorization, working folder/elevation change) | Rust `security::grants` + `app::tests`; real IPC bridge (run without authorize, forged id) |
+| Values validated (refused, never escaped); risk raised by targets, also relative to the real working folder | Rust `app::exec` tests; real IPC (quote injection, unknown value, `..` from home → L3) |
+| Advanced Mode: no L2 confirmations, multi-step custom runs, L3 kept, badge, password gate | Rust + Vitest + real app |
+| Optional Argon2id password, rate limiting, policy | Rust `security::password` + `app::tests`; Vitest; real app |
+
+Notes: a real ConPTY / `std::process` handle-inheritance race was found and fixed in this phase (ARCHITECTURE §9).
+
 
 Privilege detection; risk analyzer with path canonicalization; prepare/authorize/run grant flow; protected-action policy; optional Argon2id password with rate limiting; command-bar structural detection; Advanced Mode; elevation workflow; bypass tests.
 

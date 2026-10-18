@@ -126,6 +126,8 @@ export interface Settings {
   readonly autoStartSessions: boolean;
   readonly searchShortcut: SearchKey;
   readonly historyRetentionDays: RetentionDays;
+  /** Ask once before meaningful changes (L2). Advanced Mode skips it. */
+  readonly confirmMeaningful: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -139,6 +141,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoStartSessions: true,
   searchShortcut: 'k',
   historyRetentionDays: 30,
+  confirmMeaningful: true,
 };
 
 export interface HistoryEntry {
@@ -169,6 +172,56 @@ export interface CustomDraft {
 
 export interface ImportReport {
   readonly imported: number;
+}
+
+/** A reliably identified high-impact operation (backend security::Finding). */
+export interface Finding {
+  readonly operation: string;
+  readonly target: string;
+  readonly consequence: string;
+}
+
+export interface Analysis {
+  readonly findings: readonly Finding[];
+  /** False when the line couldn't be parsed; then there are no findings. */
+  readonly parsed: boolean;
+}
+
+/** Result of exec_prepare: what must happen before a run may start (SECURITY.md §5). */
+export interface Prepared {
+  readonly prepareId: string;
+  readonly commandId: string;
+  readonly name: string;
+  readonly shell: Shell;
+  /** The exact text that will run. */
+  readonly text: string;
+  readonly risk: RiskLevel;
+  readonly findings: readonly Finding[];
+  readonly needsElevation: boolean;
+  readonly needsConfirmation: boolean;
+  /** Text to type for irreversible operations. */
+  readonly confirmPhrase: string | null;
+  readonly needsPassword: boolean;
+}
+
+/** Which actions need the app password, when one is set. */
+export interface PasswordPolicy {
+  readonly highImpact: boolean;
+  readonly restartAsAdmin: boolean;
+  readonly advancedMode: boolean;
+}
+
+export interface SecurityStatus {
+  readonly passwordSet: boolean;
+  readonly policy: PasswordPolicy;
+  readonly advancedMode: boolean;
+}
+
+export interface PrivilegeInfo {
+  /** True when CommandDeck runs with an elevated (administrator) token. */
+  readonly elevated: boolean;
+  /** Page to open, set only by a restart as administrator. */
+  readonly launchPage: 'home' | 'cmd' | 'powershell' | 'settings' | null;
 }
 
 export interface StartupInfo {

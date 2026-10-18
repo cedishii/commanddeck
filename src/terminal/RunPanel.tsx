@@ -6,27 +6,32 @@ import { ShellBadge } from '../components/ui/Badge';
 import { buttonStyles } from '../components/ui/Modal';
 import { useDialog } from '../hooks/useDialog';
 import { api } from '../ipc/api';
-import type { CommandView } from '../ipc/types';
+import type { CommandView, Prepared } from '../ipc/types';
 import { useTerminalSession } from './useTerminalSession';
 import { XtermView, type TerminalHandle } from './XtermView';
 
 interface RunPanelProps {
   readonly command: CommandView;
+  /** A prepared (and, if needed, authorized) run. Single use: it starts once. */
+  readonly prepared: Prepared;
+  readonly grant: string | null;
   readonly onClose: () => void;
+  /** Starts the whole flow again (values, confirmation) for a fresh run. */
+  readonly onRunAgain: () => void;
 }
 
 /**
  * One-off run of a catalog command with live output. Input is forwarded, so
  * Ctrl+C interrupts like in a normal console. Closing the panel stops the run.
  */
-export function RunPanel({ command, onClose }: RunPanelProps) {
+export function RunPanel({ command, prepared, grant, onClose, onRunAgain }: RunPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const terminal = useRef<TerminalHandle | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const onKeyDown = useDialog(panelRef, onClose, closeRef);
   const starter = useCallback(
-    (cols: number, rows: number, onEvent: Parameters<typeof api.runCommand>[3]) => api.runCommand(command.id, cols, rows, onEvent),
-    [command.id],
+    (cols: number, rows: number, onEvent: Parameters<typeof api.startRun>[4]) => api.startRun(prepared.prepareId, grant, cols, rows, onEvent),
+    [prepared.prepareId, grant],
   );
   const run = useTerminalSession(terminal, starter);
   const { settings } = useSettings();
@@ -80,7 +85,7 @@ export function RunPanel({ command, onClose }: RunPanelProps) {
               <h2 className="truncate text-base font-semibold">{command.name}</h2>
               <ShellBadge shell={command.shell} />
             </div>
-            <code className="mt-0.5 block truncate font-mono text-xs text-muted">{command.syntax}</code>
+            <code className="mt-0.5 block truncate font-mono text-xs text-muted" title={prepared.text}>{prepared.text}</code>
           </div>
           <button ref={closeRef} type="button" onClick={onClose} aria-label="Close output" className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-fg">
             <X aria-hidden size={18} />
@@ -102,7 +107,7 @@ export function RunPanel({ command, onClose }: RunPanelProps) {
               Stop
             </button>
           ) : (
-            <button type="button" className={buttonStyles.secondary} disabled={status.kind === 'starting'} onClick={() => { void start(); }}>
+            <button type="button" className={buttonStyles.secondary} disabled={status.kind === 'starting'} onClick={onRunAgain}>
               <Play aria-hidden size={13} />
               Run again
             </button>

@@ -97,7 +97,7 @@ describe('SettingsPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Reset preferences' }));
     const confirm = screen.getByRole('dialog', { name: 'Reset preferences?' });
-    expect(confirm).toHaveTextContent('Your custom commands, favorites, aliases and run history are kept.');
+    expect(confirm).toHaveTextContent('Your custom commands, favorites, aliases, run history, app password and Advanced Mode are kept.');
     await user.click(within(confirm).getByRole('button', { name: 'Reset' }));
     await waitFor(() => { expect(backend.state.settings).toEqual(DEFAULT_SETTINGS); });
     expect(await screen.findByText('Preferences reset')).toBeInTheDocument();

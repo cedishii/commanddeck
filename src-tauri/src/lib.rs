@@ -4,7 +4,9 @@ pub mod app;
 pub mod catalog;
 mod commands;
 pub mod error;
+pub mod platform;
 pub mod pty;
+pub mod security;
 pub mod store;
 
 use tauri::Manager;
@@ -42,13 +44,23 @@ fn init_app(handle: &tauri::AppHandle) -> Result<App, String> {
 }
 
 pub fn run() {
+    let launch = platform::parse_args(std::env::args());
+    // After "Restart as administrator", the previous instance is still closing.
+    // Wait for it (bounded) so two instances never share the WebView2 profile or the database.
+    if let Some(pid) = launch.handoff_pid {
+        platform::wait_for_handoff(pid, std::time::Duration::from_secs(10));
+    }
+    let elevated = platform::is_elevated();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .setup(move |app| {
             let state = commands::Backend {
                 app: init_app(app.handle()),
                 pty: pty::PtyManager::default(),
                 home_dir: app.path().home_dir().ok(),
+                elevated,
+                launch_page: launch.page.clone(),
+                analyzer: std::sync::Arc::default(),
             };
             app.manage(state);
             Ok(())
@@ -79,12 +91,22 @@ pub fn run() {
             commands::custom_import,
             commands::shells_list,
             commands::pty_open,
-            commands::run_start,
+            commands::exec_prepare,
+            commands::exec_authorize,
+            commands::exec_run,
+            commands::security_get,
+            commands::security_set_password,
+            commands::security_remove_password,
+            commands::security_set_policy,
+            commands::security_set_advanced,
             commands::pty_write,
             commands::pty_resize,
             commands::pty_close,
             commands::history_get,
             commands::history_clear,
+            commands::privilege_get,
+            commands::restart_elevated,
+            commands::bar_check,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the CommandDeck window");

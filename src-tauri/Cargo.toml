@@ -1,6 +1,6 @@
 [package]
 name = "commanddeck"
-version = "0.3.0"
+version = "0.5.0"
 description = "A Windows desktop controller for CMD and PowerShell."
 authors = ["Cedrick Kaneko"]
 license = "MIT"
@@ -38,6 +38,10 @@ windows = { version = "0.62", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
+# Optional app password (D9): Argon2id, raw API only.
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc"] }
+# OS randomness for password salts and single-use grants.
+getrandom = "0.3.4"
 
 [dev-dependencies]
 tempfile = "3.27"

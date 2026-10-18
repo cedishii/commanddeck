@@ -2,7 +2,21 @@
 
 All notable changes to CommandDeck. Format based on Keep a Changelog.
 
-## [Unreleased] — Phase 5: settings & refinement
+## [0.5.0] — 2026-10-19 (Phases 4 and 5)
+
+### Added — Phase 4: safety checks and administrator mode
+- The header shows whether CommandDeck runs as a standard user or as administrator. **Restart as administrator** relaunches the whole app through Windows' permission prompt, after explaining what that means. Nothing runs automatically afterwards.
+- Commands that need administrator rights offer *Restart as administrator*, *Copy command* or *Cancel* instead of failing. A terminal that shows "Access is denied" gets a small hint.
+- The command bar asks once before a short list of well-known operations that can wreck Windows or your files (formatting, wiping disks, deleting a drive, the Windows folder or your user folder, deleting restore points, changing boot settings, turning off Defender or the firewall, and more). It looks at what the command does and where, not at words. *Run anyway* sends exactly what you typed. Ordinary admin work never asks.
+- One-click Run now works for commands that change things and for commands with values to fill in (values are checked, never altered), and for your own commands. Meaningful changes ask once (can be turned off). High-impact runs ask you to type the target.
+- **Advanced Mode**: no confirmations for meaningful changes, and your own multi-step commands and scripts run with one click. High-impact operations still ask.
+- Optional **app password** (Argon2id) for high-impact runs, restarting as administrator and turning on Advanced Mode. Wrong attempts slow down.
+
+### Fixed
+- A terminal could miss its exit when another process started at the same moment (handle inheritance race). All process creation is now serialized.
+- Form errors no longer change a field's accessible name (screen readers read the label, then the error).
+
+## Phase 5: settings & refinement (included in 0.5.0)
 
 ### Added
 - Density setting (comfortable / compact).

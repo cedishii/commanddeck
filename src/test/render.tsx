@@ -28,6 +28,9 @@ export function renderWithContext(ui: ReactElement, overrides: Partial<AppContex
     openEditor: vi.fn(),
     openInTerminal: vi.fn(),
     runCommand: vi.fn(),
+    elevated: false,
+    security: { passwordSet: false, policy: { highImpact: true, restartAsAdmin: true, advancedMode: true }, advancedMode: false },
+    restartAsAdmin: vi.fn(),
     ...overrides,
   };
   return {

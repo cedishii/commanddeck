@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '@testing-library/react';
 import { StrictMode } from 'react';
@@ -86,10 +86,36 @@ describe('App navigation', () => {
     expect(document.body).toHaveFocus();
   });
 
-  it('labels the privilege indicator as not yet wired instead of guessing', () => {
-    installFakeBackend();
+});
+
+describe('Privilege', () => {
+  it('shows the token state reported by the backend', async () => {
+    installFakeBackend({ elevated: true });
     renderApp();
-    expect(screen.getByTestId('privilege-badge')).toHaveTextContent('not checked yet');
+    await waitFor(() => { expect(screen.getByTestId('privilege-badge')).toHaveTextContent('Administrator'); });
+  });
+
+  it('restarts as administrator only after a plain-language confirmation, keeping the current page', async () => {
+    const backend = installFakeBackend();
+    const { user } = renderApp();
+    await user.keyboard('{Control>}2{/Control}');
+    await user.click(await screen.findByRole('button', { name: 'Standard user' }));
+    const dialog = screen.getByRole('dialog', { name: 'Restart as administrator?' });
+    expect(dialog).toHaveTextContent('The whole app will run with administrator rights until you close it');
+    expect(dialog).toHaveTextContent('Open terminal sessions end');
+    expect(backend.callsTo('restart_elevated')).toHaveLength(0);
+    await user.click(within(dialog).getByRole('button', { name: 'Restart as administrator' }));
+    await waitFor(() => { expect(backend.callsTo('restart_elevated')).toEqual([{ page: 'cmd', password: null }]); });
+    expect(await screen.findByText('Restarting as administrator…')).toBeInTheDocument();
+  });
+
+  it('keeps running and says so when UAC is declined', async () => {
+    installFakeBackend({ declineUac: true });
+    const { user } = renderApp();
+    await user.click(await screen.findByRole('button', { name: 'Standard user' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Restart as administrator' }));
+    expect(await screen.findByText('Restart cancelled. CommandDeck is still running as a standard user.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
 

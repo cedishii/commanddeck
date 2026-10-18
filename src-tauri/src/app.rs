@@ -10,6 +10,9 @@ use crate::catalog::{self, Command, Shell, Source};
 use crate::error::{AppError, AppResult, FieldError};
 use crate::store::{CustomDraft, Settings, SettingsPatch, Store, now_millis};
 
+mod exec;
+pub use exec::{Prepared, SecurityStatus};
+
 /// Seeded on first run: 8 of the default 10 slots, so "Add command" works
 /// immediately. Any id missing from the catalog is skipped.
 const DEFAULT_HOME: &[&str] = &[
@@ -43,25 +46,22 @@ pub struct CommandView {
     pub run_blocked_reason: Option<String>,
 }
 
-/// Why a command can't be run with one click yet, or `None` if it can.
+/// Why a command can't be run with one click, or `None` if it can.
 ///
-/// Until Phase 4 adds risk analysis and confirmation, one-click Run is limited
-/// to built-in, routine (L1), fully specified commands. Everything else stays
-/// one step away: "Open in terminal" puts it in the command bar, where the
-/// user reviews it and presses Enter themselves.
-pub fn run_block_reason(c: &Command) -> Option<&'static str> {
-    if c.source == Source::Custom {
-        Some(
-            "Custom commands open in the terminal so you can review them. One-click running with safety checks arrives in Phase 4.",
-        )
-    } else if c.risk != catalog::Risk::L1 {
-        Some(
-            "This changes your system. Open it in the terminal and press Enter yourself. One-click running with confirmation arrives in Phase 4.",
-        )
-    } else if !c.placeholders.is_empty() {
-        Some("This needs values filled in. Open it in the terminal and edit it first.")
-    } else if c.shell == Shell::Cmd && c.syntax.contains(['\r', '\n']) {
+/// Risk never blocks a run: it decides what confirmation is needed (`exec`).
+/// Free-form custom scripts (chaining, pipes, several lines) run with one
+/// click only in Advanced Mode (SECURITY.md §6.3). Elsewhere they open in the
+/// terminal, where the user reviews them and presses Enter.
+pub fn run_block_reason(c: &Command, advanced_mode: bool) -> Option<&'static str> {
+    if c.shell == Shell::Cmd && c.syntax.contains(['\r', '\n']) {
         Some("Multi-line CMD commands can only be run from the terminal.")
+    } else if c.source == Source::Custom
+        && !advanced_mode
+        && catalog::is_multi_step(c.shell, &c.syntax)
+    {
+        Some(
+            "Multi-step custom commands run with one click only in Advanced Mode. Open it in the terminal instead.",
+        )
     } else {
         None
     }
@@ -125,6 +125,7 @@ pub struct App {
     builtin: Vec<Command>,
     store: Mutex<Store>,
     notice: Option<String>,
+    exec: exec::ExecState,
 }
 
 impl App {
@@ -133,6 +134,7 @@ impl App {
             builtin,
             store: Mutex::new(store),
             notice,
+            exec: exec::ExecState::default(),
         };
         app.with_store(|store| {
             let commands = app.all_commands(store)?;
@@ -189,6 +191,7 @@ impl App {
             .map(|r| r.command_id)
             .collect();
         let mut aliases = Self::user_alias_map(store)?;
+        let advanced = store.security()?.advanced_mode;
         Ok(commands
             .into_iter()
             .map(|c| CommandView {
@@ -197,8 +200,8 @@ impl App {
                 user_aliases: aliases.remove(&c.id).unwrap_or_default(),
                 multi_step: c.source == Source::Custom
                     && catalog::is_multi_step(c.shell, &c.syntax),
-                runnable: run_block_reason(&c).is_none(),
-                run_blocked_reason: run_block_reason(&c).map(String::from),
+                runnable: run_block_reason(&c, advanced).is_none(),
+                run_blocked_reason: run_block_reason(&c, advanced).map(String::from),
                 command: c,
             })
             .collect())
@@ -253,17 +256,6 @@ impl App {
                 .map(|(command, score)| SearchResult { command, score })
                 .collect())
         })
-    }
-
-    /// The command to run, if one-click running is allowed. Records the use.
-    pub fn runnable_command(&self, id: &str) -> AppResult<Command> {
-        let command =
-            self.with_store(|store| Ok(Self::find(&self.all_commands(store)?, id)?.clone()))?;
-        if let Some(reason) = run_block_reason(&command) {
-            return Err(AppError::Conflict(reason.into()));
-        }
-        self.record_recent(id)?;
-        Ok(command)
     }
 
     pub fn source_url(&self, id: &str, index: usize) -> AppResult<String> {
@@ -958,34 +950,327 @@ mod tests {
         );
     }
 
-    #[test]
-    fn one_click_run_is_limited_until_authorization_exists() {
-        let a = app();
-        assert!(a.runnable_command("cmd.ipconfig.all").is_ok());
-        assert!(a.get("cmd.ipconfig.all").unwrap().runnable);
-        // Admin-only but read-only: allowed; Windows itself refuses without rights.
-        assert!(a.runnable_command("cmd.netstat.b").is_ok());
-        for blocked in [
-            "cmd.netsh.winsock-reset",
-            "ps.format-volume",
-            "cmd.del",
-            "cmd.where",
-        ] {
-            let view = a.get(blocked).unwrap();
-            assert!(
-                !view.runnable && view.run_blocked_reason.is_some(),
-                "{blocked}"
-            );
-            assert!(
-                matches!(a.runnable_command(blocked), Err(AppError::Conflict(_))),
-                "{blocked}"
-            );
+    // ---- prepare / authorize / run (SECURITY.md §5) ---------------------------
+
+    fn analyzer() -> crate::security::Analyzer {
+        crate::security::Analyzer::default()
+    }
+
+    fn values(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).into(), (*v).into()))
+            .collect()
+    }
+
+    fn cmd_draft(name: &str, syntax: &str, risk: Risk) -> CustomDraft {
+        CustomDraft {
+            shell: Shell::Cmd,
+            syntax: syntax.into(),
+            aliases: vec![],
+            category: Category::Administration,
+            risk,
+            modifies: risk != Risk::L1,
+            ..draft(name)
         }
-        let custom = a.custom_create(draft("Git branches")).unwrap();
-        assert!(!custom.runnable);
-        assert!(a.runnable_command(&custom.command.id).is_err());
-        // Running counts as a use.
-        assert_eq!(a.recents().unwrap()[0].command.id, "cmd.netstat.b");
+    }
+
+    #[test]
+    fn routine_runs_start_without_confirmation_and_are_single_use() {
+        let a = app();
+        let p = a
+            .prepare(&analyzer(), "cmd.ipconfig.all", &values(&[]), None, false)
+            .unwrap();
+        assert_eq!(p.risk, Risk::L1);
+        assert!(!p.needs_confirmation && !p.needs_password && !p.needs_elevation);
+        assert_eq!(p.text, "ipconfig /all");
+        let c = a.take_run(&p.prepare_id, None, None, false).unwrap();
+        assert_eq!(c.syntax, "ipconfig /all");
+        assert!(
+            a.take_run(&p.prepare_id, None, None, false).is_err(),
+            "replay"
+        );
+        assert_eq!(a.recents().unwrap()[0].command.id, "cmd.ipconfig.all");
+    }
+
+    #[test]
+    fn meaningful_changes_need_a_grant_unless_turned_off() {
+        let a = app();
+        let p = a
+            .prepare(
+                &analyzer(),
+                "cmd.shutdown.restart-now",
+                &values(&[]),
+                None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(p.risk, Risk::L2);
+        assert!(p.needs_confirmation && p.confirm_phrase.is_none());
+        assert!(
+            matches!(
+                a.take_run(&p.prepare_id, None, None, false),
+                Err(AppError::Conflict(_))
+            ),
+            "skipping authorize is rejected"
+        );
+        let p = a
+            .prepare(
+                &analyzer(),
+                "cmd.shutdown.restart-now",
+                &values(&[]),
+                None,
+                false,
+            )
+            .unwrap();
+        let grant = a.authorize(&p.prepare_id, None, None).unwrap();
+        assert!(a.take_run(&p.prepare_id, Some(&grant), None, false).is_ok());
+
+        a.update_settings(&SettingsPatch {
+            confirm_meaningful: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
+        let p = a
+            .prepare(
+                &analyzer(),
+                "cmd.shutdown.restart-now",
+                &values(&[]),
+                None,
+                false,
+            )
+            .unwrap();
+        assert!(!p.needs_confirmation);
+    }
+
+    #[test]
+    fn values_raise_risk_when_the_target_is_critical() {
+        let a = app();
+        let p = a
+            .prepare(
+                &analyzer(),
+                "cmd.rd.recursive",
+                &values(&[("Folder", "C:\\Users\\Public\\old-build")]),
+                None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(p.risk, Risk::L2);
+        assert!(p.findings.is_empty());
+
+        let p = a
+            .prepare(
+                &analyzer(),
+                "cmd.rd.recursive",
+                &values(&[("Folder", "C:\\Windows")]),
+                None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(p.risk, Risk::L3);
+        assert_eq!(p.findings.len(), 1);
+        assert_eq!(p.confirm_phrase.as_deref(), Some("C:\\Windows"));
+        assert_eq!(p.text, "rd /s /q \"C:\\Windows\"");
+        let e = a.authorize(&p.prepare_id, Some("yes"), None).unwrap_err();
+        assert!(matches!(e, AppError::Validation(_)));
+        let grant = a
+            .authorize(&p.prepare_id, Some(" c:\\windows "), None)
+            .unwrap();
+        // Authorized, but nothing runs here: take_run only returns the command.
+        assert!(a.take_run(&p.prepare_id, Some(&grant), None, false).is_ok());
+    }
+
+    #[test]
+    fn relative_values_are_judged_in_the_real_working_folder() {
+        // One-click runs start in the home folder, so ".." there is C:\Users.
+        let a = app();
+        let home = std::path::PathBuf::from(std::env::var("USERPROFILE").unwrap());
+        let rd = |folder: &str| {
+            a.prepare(
+                &analyzer(),
+                "cmd.rd.recursive",
+                &values(&[("Folder", folder)]),
+                Some(&home),
+                false,
+            )
+            .unwrap()
+        };
+        assert_eq!(rd("..").risk, Risk::L3);
+        assert_eq!(rd(".").risk, Risk::L3);
+        assert_eq!(rd("C:\\").risk, Risk::L3);
+        assert_eq!(rd("old-build").risk, Risk::L2);
+    }
+
+    #[test]
+    fn a_command_edited_after_authorization_is_rejected() {
+        let a = app();
+        let id = a
+            .custom_create(cmd_draft("Restart", "shutdown /r /t 0", Risk::L2))
+            .unwrap()
+            .command
+            .id;
+        let p = a
+            .prepare(&analyzer(), &id, &values(&[]), None, false)
+            .unwrap();
+        let grant = a.authorize(&p.prepare_id, None, None).unwrap();
+        a.custom_update(&id, cmd_draft("Restart", "shutdown /r /t 60", Risk::L2))
+            .unwrap();
+        let e = a
+            .take_run(&p.prepare_id, Some(&grant), None, false)
+            .unwrap_err();
+        assert!(e.to_string().contains("changed after you confirmed"), "{e}");
+    }
+
+    #[test]
+    fn the_working_folder_and_elevation_are_part_of_the_binding() {
+        let a = app();
+        let dir = std::path::Path::new("C:\\");
+        let p = a
+            .prepare(
+                &analyzer(),
+                "cmd.ipconfig.all",
+                &values(&[]),
+                Some(dir),
+                false,
+            )
+            .unwrap();
+        assert!(a.take_run(&p.prepare_id, None, None, false).is_err());
+        let p = a
+            .prepare(&analyzer(), "cmd.ipconfig.all", &values(&[]), None, false)
+            .unwrap();
+        assert!(a.take_run(&p.prepare_id, None, None, true).is_err());
+    }
+
+    #[test]
+    fn admin_commands_need_elevation_and_never_run_unelevated() {
+        let a = app();
+        let p = a
+            .prepare(&analyzer(), "cmd.netstat.b", &values(&[]), None, false)
+            .unwrap();
+        assert!(p.needs_elevation);
+        let e = a.take_run(&p.prepare_id, None, None, false).unwrap_err();
+        assert!(e.to_string().contains("administrator"), "{e}");
+        let p = a
+            .prepare(&analyzer(), "cmd.netstat.b", &values(&[]), None, true)
+            .unwrap();
+        assert!(!p.needs_elevation);
+        assert!(a.take_run(&p.prepare_id, None, None, true).is_ok());
+    }
+
+    #[test]
+    fn password_guards_high_impact_runs_and_security_settings() {
+        let a = app();
+        a.set_password(None, "open sesame").unwrap();
+        assert!(a.security_status().unwrap().password_set);
+        let params = values(&[("Folder", "C:\\")]);
+        let p = a
+            .prepare(&analyzer(), "cmd.rd.recursive", &params, None, false)
+            .unwrap();
+        assert!(p.needs_password);
+        let wrong = a.authorize(&p.prepare_id, Some("C:\\"), Some("nope"));
+        assert!(matches!(wrong, Err(AppError::Validation(_))));
+        let missing = a.authorize(&p.prepare_id, Some("C:\\"), None);
+        assert!(missing.is_err());
+        let grant = a
+            .authorize(&p.prepare_id, Some("C:\\"), Some("open sesame"))
+            .unwrap();
+        assert!(a.take_run(&p.prepare_id, Some(&grant), None, false).is_ok());
+
+        // Changing the password or policy needs the current password.
+        assert!(a.set_password(Some("nope"), "new secret").is_err());
+        assert!(
+            a.set_policy(
+                &crate::store::PasswordPolicy {
+                    high_impact: false,
+                    ..Default::default()
+                },
+                None
+            )
+            .is_err()
+        );
+        a.set_policy(
+            &crate::store::PasswordPolicy {
+                high_impact: false,
+                ..Default::default()
+            },
+            Some("open sesame"),
+        )
+        .unwrap();
+        let p = a
+            .prepare(&analyzer(), "cmd.rd.recursive", &params, None, false)
+            .unwrap();
+        assert!(
+            !p.needs_password && p.needs_confirmation,
+            "L3 still confirms"
+        );
+        assert!(a.check_restart_allowed(None).is_err());
+        assert!(a.check_restart_allowed(Some("open sesame")).is_ok());
+        assert!(a.remove_password(None).is_err());
+        a.remove_password(Some("open sesame")).unwrap();
+        assert!(a.check_restart_allowed(None).is_ok());
+    }
+
+    #[test]
+    fn wrong_passwords_are_rate_limited() {
+        let a = app();
+        a.set_password(None, "open sesame").unwrap();
+        for _ in 0..4 {
+            let _ = a.check_restart_allowed(Some("bad"));
+        }
+        let e = a.check_restart_allowed(Some("open sesame")).unwrap_err();
+        assert!(matches!(e, AppError::Limit(_)), "{e:?}");
+    }
+
+    #[test]
+    fn advanced_mode_skips_l2_confirmations_and_allows_scripts_but_keeps_l3() {
+        let a = app();
+        let script = a
+            .custom_create(cmd_draft(
+                "Renew",
+                "ipconfig /release && ipconfig /renew",
+                Risk::L2,
+            ))
+            .unwrap();
+        assert!(!script.runnable);
+        assert!(
+            a.prepare(&analyzer(), &script.command.id, &values(&[]), None, false)
+                .is_err()
+        );
+
+        a.set_password(None, "open sesame").unwrap();
+        assert!(
+            a.set_advanced_mode(true, None).is_err(),
+            "password required"
+        );
+        a.set_advanced_mode(true, Some("open sesame")).unwrap();
+        assert!(a.get(&script.command.id).unwrap().runnable);
+        let p = a
+            .prepare(&analyzer(), &script.command.id, &values(&[]), None, false)
+            .unwrap();
+        assert!(!p.needs_confirmation, "no L2 confirmation in Advanced Mode");
+        let p = a
+            .prepare(
+                &analyzer(),
+                "cmd.rd.recursive",
+                &values(&[("Folder", "C:\\")]),
+                None,
+                false,
+            )
+            .unwrap();
+        assert!(p.needs_confirmation && p.needs_password, "L3 kept");
+        // Turning it off never needs the password.
+        a.set_advanced_mode(false, None).unwrap();
+        assert!(!a.security_status().unwrap().advanced_mode);
+    }
+
+    #[test]
+    fn resetting_preferences_keeps_security_state() {
+        let a = app();
+        a.set_password(None, "open sesame").unwrap();
+        a.set_advanced_mode(true, Some("open sesame")).unwrap();
+        a.reset_preferences().unwrap();
+        let s = a.security_status().unwrap();
+        assert!(s.password_set && s.advanced_mode);
     }
 
     #[test]

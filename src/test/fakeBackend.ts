@@ -7,7 +7,7 @@
  * (shapes and error kinds), not its full logic. The real rules are tested in Rust.
  */
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks';
-import { DEFAULT_SETTINGS, type Command, type CommandView, type CustomDraft, type HistoryEntry, type HomeView, type PtyEvent, type Settings, type Shell } from '../ipc/types';
+import { DEFAULT_SETTINGS, type Command, type CommandView, type CustomDraft, type Finding, type HistoryEntry, type HomeView, type PasswordPolicy, type Prepared, type PtyEvent, type Settings, type Shell } from '../ipc/types';
 
 interface FakeSession {
   readonly id: number;
@@ -69,6 +69,16 @@ export interface FakeBackendOptions {
   readonly settings?: Partial<Settings>;
   readonly notice?: string | null;
   readonly history?: readonly HistoryEntry[];
+  readonly elevated?: boolean;
+  /** restart_elevated behaves as if UAC was declined. */
+  readonly declineUac?: boolean;
+  /** bar_check result per exact line (default: no findings). */
+  readonly barFindings?: Readonly<Record<string, readonly Finding[]>>;
+  /** exec_prepare findings per resolved text (raise risk to L3, like the analyzer). */
+  readonly runFindings?: Readonly<Record<string, readonly Finding[]>>;
+  /** Pre-set app password and Advanced Mode. */
+  readonly password?: string;
+  readonly advancedMode?: boolean;
 }
 
 export interface FakeBackend {
@@ -85,6 +95,7 @@ export interface FakeBackend {
     recents: string[];
     aliases: Map<string, string[]>;
     history: HistoryEntry[];
+    security: { password: string | null; policy: PasswordPolicy; advancedMode: boolean };
   };
   callsTo: (cmd: string) => Payload[];
   readonly sessions: FakeSession[];
@@ -106,6 +117,7 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     recents: [],
     aliases: new Map(),
     history: [...(options.history ?? [])],
+    security: { password: options.password ?? null, policy: { highImpact: true, restartAsAdmin: true, advancedMode: true }, advancedMode: options.advancedMode ?? false },
   };
   const calls: FakeBackend['calls'] = [];
   const failures = new Map<string, ErrorPayload>();
@@ -114,7 +126,20 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
   const sessions: FakeSession[] = [];
   // Mirrors app.rs run_block_reason.
   const runBlock = (c: Command): string | null =>
-    c.source === 'custom' ? 'Custom commands open in the terminal.' : c.risk !== 'L1' ? 'This changes your system.' : c.placeholders.length > 0 ? 'This needs values filled in.' : null;
+    c.shell === 'cmd' && /[\r\n]/.test(c.syntax)
+      ? 'Multi-line CMD commands can only be run from the terminal.'
+      : c.source === 'custom' && !state.security.advancedMode && multiStep(c.shell, c.syntax)
+        ? 'Multi-step custom commands run with one click only in Advanced Mode. Open it in the terminal instead.'
+        : null;
+  // Mirrors app/exec.rs (prepare → authorize → run) closely enough for UI tests.
+  let nextPrepare = 1;
+  const pending = new Map<string, { prepared: Prepared; grant: string | null }>();
+  const securityStatus = () => ({ passwordSet: state.security.password !== null, policy: state.security.policy, advancedMode: state.security.advancedMode });
+  const checkPassword = (given: unknown) => {
+    if (state.security.password !== null && given !== state.security.password) {
+      throw { kind: 'validation', message: 'Some fields are invalid', fields: [{ field: 'password', message: 'Wrong password.' }] } satisfies ErrorPayload;
+    }
+  };
   const openSession = (kind: FakeSession['kind'], target: string, channel: unknown) => {
     const ch = channel as { onmessage: (e: PtyEvent) => void };
     const s: FakeSession = { id: sessions.length + 1, kind, target, emit: (e) => { ch.onmessage(e); }, written: '', open: true };
@@ -161,12 +186,78 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
       { id: 'pwsh', label: 'PowerShell 7', path: null, available: false },
     ],
     pty_open: (a) => openSession('session', String(a.shell), a.onEvent),
-    run_start: (a) => {
+    exec_prepare: (a) => {
       const c = find(a.id as string);
       const reason = runBlock(c);
       if (reason) throw { kind: 'conflict', message: reason };
-      state.recents = [c.id, ...state.recents.filter((r) => r !== c.id)];
-      return openSession('run', c.id, a.onEvent);
+      const params = a.params as Record<string, string>;
+      const fields = c.placeholders.filter((p) => !params[p.name]?.trim()).map((p) => ({ field: `params.${p.name}`, message: 'Fill this in.' }));
+      if (fields.length > 0) throw { kind: 'validation', message: 'Some fields are invalid', fields } satisfies ErrorPayload;
+      const text = c.placeholders.reduce((t, p) => t.replaceAll(`<${p.name}>`, params[p.name] ?? ''), c.syntax);
+      const findings = options.runFindings?.[text] ?? [];
+      const risk = findings.length > 0 ? 'L3' : c.risk;
+      const { security } = state;
+      const firstValue = c.placeholders[0] ? params[c.placeholders[0].name] : undefined;
+      const prepared: Prepared = {
+        prepareId: `prep-${nextPrepare++}`,
+        commandId: c.id,
+        name: c.name,
+        shell: c.shell,
+        text,
+        risk,
+        findings,
+        needsElevation: c.requiresAdmin && !(options.elevated ?? false),
+        needsConfirmation: risk === 'L3' || (risk === 'L2' && state.settings.confirmMeaningful && !security.advancedMode),
+        confirmPhrase: risk === 'L3' ? (firstValue ?? 'RUN') : null,
+        needsPassword: risk === 'L3' && security.password !== null && security.policy.highImpact,
+      };
+      pending.set(prepared.prepareId, { prepared, grant: null });
+      return prepared;
+    },
+    exec_authorize: (a) => {
+      const p = pending.get(a.prepareId as string);
+      if (!p) throw { kind: 'conflict', message: 'This run expired or was already used. Start it again.' };
+      const phrase = p.prepared.confirmPhrase;
+      if (phrase && ((a.confirmation as string | null) ?? '').trim().toLowerCase() !== phrase.toLowerCase()) {
+        throw { kind: 'validation', message: 'Some fields are invalid', fields: [{ field: 'confirmation', message: `Type ${phrase} exactly to confirm.` }] } satisfies ErrorPayload;
+      }
+      if (p.prepared.needsPassword) checkPassword(a.password);
+      p.grant = `grant-${p.prepared.prepareId}`;
+      return p.grant;
+    },
+    exec_run: (a) => {
+      const p = pending.get(a.prepareId as string);
+      pending.delete(a.prepareId as string);
+      if (!p) throw { kind: 'conflict', message: 'This run expired or was already used. Start it again.' };
+      if ((p.prepared.needsConfirmation || p.prepared.needsPassword) && (p.grant === null || a.grant !== p.grant)) {
+        throw { kind: 'conflict', message: "This run wasn't confirmed. Start it again." };
+      }
+      if (p.prepared.needsElevation) throw { kind: 'conflict', message: 'This command needs administrator rights.' };
+      const id = p.prepared.commandId;
+      state.recents = [id, ...state.recents.filter((r) => r !== id)];
+      return openSession('run', id, a.onEvent);
+    },
+    security_get: () => securityStatus(),
+    security_set_password: (a) => {
+      checkPassword(a.current);
+      if (String(a.password).length < 6) throw { kind: 'validation', message: 'Some fields are invalid', fields: [{ field: 'password', message: 'Use at least 6 characters.' }] } satisfies ErrorPayload;
+      state.security.password = String(a.password);
+      return securityStatus();
+    },
+    security_remove_password: (a) => {
+      checkPassword(a.current);
+      state.security.password = null;
+      return securityStatus();
+    },
+    security_set_policy: (a) => {
+      checkPassword(a.password);
+      state.security.policy = a.policy as PasswordPolicy;
+      return securityStatus();
+    },
+    security_set_advanced: (a) => {
+      if (a.enabled && state.security.policy.advancedMode) checkPassword(a.password);
+      state.security.advancedMode = Boolean(a.enabled);
+      return securityStatus();
     },
     pty_write: (a) => {
       session(a.sessionId).written += String(a.data);
@@ -255,6 +346,14 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     recents_get: () => state.recents.map((id) => view(find(id))),
     recents_clear: () => {
       state.recents = [];
+      return null;
+    },
+    bar_check: (a) => ({ findings: options.barFindings?.[a.text as string] ?? [], parsed: true }),
+    privilege_get: () => ({ elevated: options.elevated ?? false, launchPage: null }),
+    restart_elevated: (a) => {
+      if (state.security.policy.restartAsAdmin) checkPassword(a.password);
+      if (options.elevated) throw { kind: 'conflict', message: 'CommandDeck is already running as administrator.' };
+      if (options.declineUac) throw { kind: 'conflict', message: 'Restart cancelled. CommandDeck is still running as a standard user.' };
       return null;
     },
     history_get: (a) => state.history.slice(0, (a.limit as number | undefined) ?? 50),

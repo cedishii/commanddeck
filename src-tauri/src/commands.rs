@@ -1,6 +1,7 @@
 //! Tauri command handlers: deserialize, delegate to `App`, serialize.
 //! No logic lives here. Async so storage work never runs on the UI thread.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use tauri::ipc::Channel;
@@ -10,11 +11,12 @@ use tauri_plugin_opener::OpenerExt;
 use crate::pty::{self, EventSink, PtyEvent, PtyManager, SessionInfo, ShellInfo, ShellKind};
 
 use crate::app::{
-    App, CommandView, HistoryEntry, HomeView, ImportReport, SearchResult, StartupInfo,
+    App, CommandView, HistoryEntry, HomeView, ImportReport, Prepared, SearchResult, SecurityStatus,
+    StartupInfo,
 };
 use crate::catalog::Shell;
 use crate::error::{AppError, AppResult};
-use crate::store::{CustomDraft, Settings, SettingsPatch};
+use crate::store::{CustomDraft, PasswordPolicy, Settings, SettingsPatch};
 
 /// Managed state. If startup failed, the window still opens and every command
 /// reports the startup error, so the user sees why instead of a vanished app.
@@ -22,6 +24,11 @@ pub struct Backend {
     pub app: Result<App, String>,
     pub pty: PtyManager,
     pub home_dir: Option<std::path::PathBuf>,
+    /// Token state at startup. It can't change while the process runs.
+    pub elevated: bool,
+    /// Page requested on the command line (only after a restart as administrator).
+    pub launch_page: Option<String>,
+    pub analyzer: Arc<crate::security::Analyzer>,
 }
 
 impl Backend {
@@ -54,24 +61,85 @@ pub async fn pty_open(
     on_event: Channel<PtyEvent>,
 ) -> AppResult<SessionInfo> {
     let spec = pty::interactive_spec(shell, b.home_dir.clone(), cols, rows)?;
+    if shell != ShellKind::Cmd {
+        // Start the PowerShell parser now so the first command-bar check is fast.
+        let analyzer = b.analyzer.clone();
+        tauri::async_runtime::spawn_blocking(move || analyzer.warm_up_powershell());
+    }
     b.pty.open(&spec, channel_sink(on_event))
 }
 
-/// One-off run of a catalog command by id. The frontend never supplies command text.
+/// Structural check of a command-bar line before it's sent (SECURITY.md §6.2).
+/// Purely advisory: the text is never changed, and sending it doesn't depend on this.
+#[tauri::command]
+pub async fn bar_check(
+    b: B<'_>,
+    shell: ShellKind,
+    text: String,
+) -> AppResult<crate::security::Analysis> {
+    let syntax = match shell {
+        ShellKind::Cmd => crate::security::Syntax::Cmd,
+        ShellKind::Powershell | ShellKind::Pwsh => crate::security::Syntax::PowerShell,
+    };
+    let analyzer = b.analyzer.clone();
+    tauri::async_runtime::spawn_blocking(move || analyzer.analyze(syntax, &text))
+        .await
+        .map_err(|e| AppError::Internal(format!("check failed: {e}")))
+}
+
+/// Step 1 of a one-off run (SECURITY.md §5): validates the values, resolves the
+/// exact text, analyzes it, and says what's needed before it may start.
+/// The frontend names a command id and values; it never supplies command text.
+#[tauri::command]
+pub async fn exec_prepare(
+    handle: AppHandle,
+    id: String,
+    params: HashMap<String, String>,
+) -> AppResult<Prepared> {
+    // Analysis may wait on the PowerShell parser; keep it off the async workers.
+    tauri::async_runtime::spawn_blocking(move || {
+        let b = handle.state::<Backend>();
+        b.app()?
+            .prepare(&b.analyzer, &id, &params, b.home_dir.as_deref(), b.elevated)
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("prepare failed: {e}")))?
+}
+
+/// Step 2, only when confirmation or the password is needed: returns a single-use grant.
+#[tauri::command]
+pub async fn exec_authorize(
+    b: B<'_>,
+    prepare_id: String,
+    confirmation: Option<String>,
+    password: Option<String>,
+) -> AppResult<String> {
+    b.app()?
+        .authorize(&prepare_id, confirmation.as_deref(), password.as_deref())
+}
+
+/// Step 3: re-derives the run, checks it matches what was prepared and authorized, starts it.
 /// When the run ends, its metadata (not output) is added to run history.
 #[tauri::command]
-pub async fn run_start(
+pub async fn exec_run(
     handle: AppHandle,
     b: B<'_>,
-    id: String,
+    prepare_id: String,
+    grant: Option<String>,
     cols: u16,
     rows: u16,
     on_event: Channel<PtyEvent>,
 ) -> AppResult<SessionInfo> {
-    let command = b.app()?.runnable_command(&id)?;
+    let command = b.app()?.take_run(
+        &prepare_id,
+        grant.as_deref(),
+        b.home_dir.as_deref(),
+        b.elevated,
+    )?;
     let spec = pty::run_spec(&command, b.home_dir.clone(), cols, rows)?;
     let started_at = crate::store::now_millis();
     let forward = channel_sink(on_event);
+    let id = command.id;
     let sink: EventSink = Arc::new(move |event| {
         if let pty::ProcessEvent::Exit(code) = &event {
             let duration = crate::store::now_millis() - started_at;
@@ -82,6 +150,46 @@ pub async fn run_start(
         forward(event);
     });
     b.pty.open(&spec, sink)
+}
+
+#[tauri::command]
+pub async fn security_get(b: B<'_>) -> AppResult<SecurityStatus> {
+    b.app()?.security_status()
+}
+
+#[tauri::command]
+pub async fn security_set_password(
+    b: B<'_>,
+    current: Option<String>,
+    password: String,
+) -> AppResult<SecurityStatus> {
+    b.app()?.set_password(current.as_deref(), &password)
+}
+
+#[tauri::command]
+pub async fn security_remove_password(
+    b: B<'_>,
+    current: Option<String>,
+) -> AppResult<SecurityStatus> {
+    b.app()?.remove_password(current.as_deref())
+}
+
+#[tauri::command]
+pub async fn security_set_policy(
+    b: B<'_>,
+    policy: PasswordPolicy,
+    password: Option<String>,
+) -> AppResult<SecurityStatus> {
+    b.app()?.set_policy(&policy, password.as_deref())
+}
+
+#[tauri::command]
+pub async fn security_set_advanced(
+    b: B<'_>,
+    enabled: bool,
+    password: Option<String>,
+) -> AppResult<SecurityStatus> {
+    b.app()?.set_advanced_mode(enabled, password.as_deref())
 }
 
 #[tauri::command]
@@ -112,6 +220,49 @@ pub async fn pty_close(b: B<'_>, session_id: u64) -> AppResult<()> {
 }
 
 type B<'a> = State<'a, Backend>;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivilegeInfo {
+    pub elevated: bool,
+    pub launch_page: Option<String>,
+}
+
+/// Works even if startup failed, so the UI can always show the true token state.
+#[tauri::command]
+pub async fn privilege_get(b: B<'_>) -> AppResult<PrivilegeInfo> {
+    Ok(PrivilegeInfo {
+        elevated: b.elevated,
+        launch_page: b.launch_page.clone(),
+    })
+}
+
+/// Relaunches the whole app through UAC, then exits this instance.
+/// Declining UAC returns a `conflict` error and this instance keeps running.
+#[tauri::command]
+pub async fn restart_elevated(
+    handle: AppHandle,
+    b: B<'_>,
+    page: String,
+    password: Option<String>,
+) -> AppResult<()> {
+    if b.elevated {
+        return Err(AppError::Conflict(
+            "CommandDeck is already running as administrator.".into(),
+        ));
+    }
+    // If startup failed there's no stored policy to check; elevation is still UAC-gated.
+    if let Ok(app) = b.app() {
+        app.check_restart_allowed(password.as_deref())?;
+    }
+    crate::platform::relaunch_elevated(&page)?;
+    // Exit shortly after replying. Closing ends every session's Job Object.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        handle.exit(0);
+    });
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn app_startup(b: B<'_>) -> AppResult<StartupInfo> {

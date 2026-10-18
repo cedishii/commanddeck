@@ -15,6 +15,23 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 use crate::catalog::{Command, Shell};
+
+/// Serializes process creation across CommandDeck.
+///
+/// `CreatePseudoConsole` briefly makes its pipe handles inheritable while it
+/// starts the console host, and `std::process::Command` spawns with handle
+/// inheritance on. If the two overlap, the std child inherits a write end of a
+/// terminal's output pipe, the pipe never reaches EOF, and that session never
+/// reports its exit. Every spawn path takes this lock.
+pub static SPAWN_LOCK: Mutex<()> = Mutex::new(());
+
+/// The only way CommandDeck starts a `std::process::Command` (see `SPAWN_LOCK`).
+pub fn spawn_std(command: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    let _guard = SPAWN_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    command.spawn()
+}
 use crate::error::{AppError, AppResult};
 pub use conpty::{ConPtyProcess, EventSink, ProcessEvent, SpawnSpec};
 
@@ -344,6 +361,52 @@ mod tests {
 
     fn temp_cwd() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
+    }
+
+    /// Regression: a std::process spawn overlapping CreatePseudoConsole inherited a
+    /// terminal's output pipe, so the run never reported its exit (seen with the
+    /// PowerShell analysis helper). Long-lived std children race terminal spawns here.
+    #[test]
+    fn std_spawns_racing_terminals_never_keep_their_pipes_open() {
+        use std::os::windows::process::CommandExt;
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let racer = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                let mut children = Vec::new();
+                while !stop.load(Ordering::SeqCst) {
+                    let spawned = spawn_std(
+                        std::process::Command::new(system_dir().join("cmd.exe"))
+                            .args(["/d", "/c", "ping -n 3 127.0.0.1 >nul"])
+                            .stdin(std::process::Stdio::piped())
+                            .stdout(std::process::Stdio::piped())
+                            .creation_flags(0x0800_0000),
+                    );
+                    children.extend(spawned.ok());
+                }
+                for mut c in children {
+                    let _ = c.kill();
+                    let _ = c.wait();
+                }
+            })
+        };
+        let cwd = temp_cwd();
+        for i in 0..6 {
+            let (sink, rx) = collect();
+            let spec = run_spec(
+                &command(Shell::Cmd, &format!("echo run-{i}")),
+                Some(cwd.path().into()),
+                80,
+                24,
+            )
+            .unwrap();
+            let _p = ConPtyProcess::spawn(&spec, sink).unwrap();
+            let (out, code) = drain(&rx, Duration::from_secs(10));
+            assert!(out.contains(&format!("run-{i}")), "{out:?}");
+            assert_eq!(code, Some(0), "run {i} never reported its exit");
+        }
+        stop.store(true, Ordering::SeqCst);
+        racer.join().unwrap();
     }
 
     #[test]

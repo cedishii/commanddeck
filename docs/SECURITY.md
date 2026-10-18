@@ -1,6 +1,6 @@
 # CommandDeck Security Model
 
-Status: **Accepted policy.** Data-layer protections are implemented (§10a). Execution and authorization (§3–§8) come in Phases 3–4.
+Status: **Accepted policy.** Implemented: data layer (§10a), execution (§10b), authorization and elevation (§10c).
 
 ## 1. Principles
 
@@ -140,7 +140,7 @@ Free-form custom scripts can't be fully analyzed. They are labeled "script / mul
 ## 10b. Implemented in Phase 3 (verified)
 
 - **What the webview can start**: a known shell (`cmd`, `powershell`, `pwsh`, an enum) or a catalog command **by id**. It can't name a program or pass command text to execute. Text typed or sent from the command bar goes into an already-running shell, which is exactly what typing does.
-- **One-click Run policy** (backend, `app::run_block_reason`): only built-in, L1 (routine), placeholder-free commands. L2/L3, custom, placeholder and multi-line CMD commands are refused by the backend with an explanation; the UI offers "Open in terminal" instead. Admin-only read-only commands may run, and Windows refuses them for a standard user.
+- **One-click Run policy** *(Phase 3; superseded by §10c)* (backend, `app::run_block_reason`): only built-in, L1 (routine), placeholder-free commands. L2/L3, custom, placeholder and multi-line CMD commands are refused by the backend with an explanation; the UI offers "Open in terminal" instead. Admin-only read-only commands may run, and Windows refuses them for a standard user.
 - **Open in terminal never executes.** It only fills the command bar; the user presses Enter.
 - **Terminal input is not screened, filtered or rewritten** (§6.1). The command bar sends the text with CR line endings, exactly as typing. Structural checks are Phase 4.
 - **Process containment**: every process is created suspended and assigned to its own Job Object (KILL_ON_JOB_CLOSE) before its first instruction. Verified: End session killed the shell and its running `ping`; closing the app killed 2 shells, their console hosts and a running child (0 survivors).
@@ -149,9 +149,27 @@ Free-form custom scripts can't be fully analyzed. They are labeled "script / mul
 - **Resource limits**: 16 concurrent processes, 1 MB per input write, bounded terminal sizes.
 - Output isn't stored anywhere. Only command ids of Runs go into recent history.
 
+## 10c. Implemented in Phase 4
+
+- **Token state** read from Windows (`TokenElevation`) and shown as `Standard user` / `Administrator`. Admin is shown, never warned about.
+- **Restart as administrator** relaunches the whole app through UAC (`runas`) after a plain-language confirmation (the whole app gets admin rights; sessions end). Declining UAC leaves the instance running with a message. Only a page name is passed on the command line, and nothing runs after the restart.
+- **Admin-needed commands never run unelevated.** One-click Run offers *Restart as administrator* / *Copy command* / *Cancel* instead (backend-enforced in `take_run`). In a terminal, Windows' own "Access is denied" stays visible, and a small hint links to the restart.
+- **Command bar** (§6.2): structural detection in Rust (CMD tokenizer, PowerShell AST), one confirmation (*Run anyway* / *Edit* / *Cancel*), the original text sent unchanged, confirmed lines not re-asked in that session, any failure → sent without prompt. Terminal-pane keystrokes are not checked.
+- **One-click runs** (§5): `exec_prepare(id, values)` → `exec_authorize(prepareId, typed?, password?)` → `exec_run(prepareId, grant)`. Grants are single use, valid 60 s, and bound to (shell, resolved text, working folder, elevation). `exec_run` re-derives all of it, so skipped steps, replays, forged or swapped ids, and commands edited after confirmation are refused. Tested in Rust (`app::tests`, `security::grants::tests`) and through the real IPC bridge.
+- **Risk** = catalog or declared risk, raised to L3 when the analyzer finds a catastrophic operation on a resolved critical target (never lowered). One-click runs are analyzed in their real working folder (the home folder), so `rd /s /q ..` is L3.
+- **Values** for placeholders are checked per shell and per position (inside quotes or bare) and refused, never escaped: no quotes, `%`, `!`, `^`, backtick, `$`, smart quotes, control characters, leading `-` or `/`; bare values also exclude spaces and separators.
+- **Confirmations**: L3 always (type the first value, or `RUN`); L2 when *Ask before meaningful changes* is on (default) and Advanced Mode is off.
+- **Advanced Mode**: no L2 confirmations; multi-step custom commands run with one click; L3 still confirms (+ password per policy). Badge in the header. Turning it on may need the password; turning it off never does.
+- **App password** (§8): Argon2id (19 MiB, t=2, p=1, 16-byte salt), constant-time compare, 3 free attempts then 2 s doubling to 5 min. Policy (all on by default): high-impact runs, restart as administrator, enabling Advanced Mode. Changing the password, the policy or removing it always needs the current password. *Reset preferences* keeps security state.
+- **Process creation is serialized** (`pty::SPAWN_LOCK`) so no child can inherit another session's pipe handles.
+
 ## 11. Known limitations
 
 - Command-bar analysis is structural but incomplete: runtime variables, encoded commands, `Invoke-Expression`, scripts and anything typed in the terminal pane are not covered. It exists to catch mistakes, not adversaries.
 - While the app is elevated, everything run through it (including the terminal) has admin rights. Close and reopen the app to return to standard user.
 - Protected-path canonicalization cannot follow every indirection (e.g. a script that computes paths at runtime).
 - An app password protects only actions taken *through CommandDeck*.
+- The password attempt limiter is in memory: restarting the app resets it. That fits a mistake guard; it isn't brute-force protection for the database (which anyone using the Windows account can read).
+- The command-bar check runs in the frontend's send path: the terminal pane and the raw `pty_write` channel deliver input unchecked by design (§6.1), so the check guards against mistakes, not against a compromised UI.
+- Interactive programs: a line typed into a running `diskpart` (e.g. `clean`) can't be told apart from a command, so it isn't detected. Scripted diskpart (`echo … | diskpart`, `diskpart /s file`) is.
+- PowerShell analysis needs `powershell.exe`; if it's missing or slow, PowerShell lines are sent without a check.
