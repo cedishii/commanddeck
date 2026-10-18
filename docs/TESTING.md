@@ -88,6 +88,9 @@ How the real-app e2e works (repeatable): set `COMMANDDECK_DATA_DIR` and `WEBVIEW
 | 2026-10-18 | 3 | OS-level cleanup checks via Win32_Process | End session: cmd + running ping child both gone. App close with busy shells: 5 processes (2 shells, 2 conhosts, ping) → **0 survivors** |
 | 2026-10-18 | 3 | Light-theme readability (screenshot) | Found PSReadLine text invisible (ANSI white on white); fixed with `minimumContrastRatio: 4.5`; re-verified readable |
 | 2026-10-18 | 3 | `npm run tauri build` (0.3.0) | Pass: setup.exe 3.02 MB, MSI 4.32 MB |
+| 2026-10-19 | 5 | `cargo test`, clippy `-D warnings`, fmt | **70 pass** (1 ignored dev aid); clean |
+| 2026-10-19 | 5 | `npm run typecheck`, `npm run lint`, `npm test` incl. new SettingsPage.test (density, live font/screen reader, auto-start off, search key incl. in-terminal, history list/clear/retention) | Clean; **130/130 pass** |
+| 2026-10-19 | 5 | Real-app e2e (isolated data + WebView2 profile, CDP) | One-click run → history row `exit 0`; density live and restored after reload; Ctrl+K freed / Ctrl+P searches; terminal 13 → 18 px live, same session; settings persisted. **Found:** document 1382 px in a 780 px window on Settings (sr-only radios/thead without a positioned ancestor). Fixed with `relative` on the page container and option labels; re-measured 780 = viewport. No jsdom test possible (layout) |
 | 2026-10-18 | 3 | Release exe under the production CSP (`http://tauri.localhost`), isolated WebView2 profile, session-only so no DB writes | CMD prompt streamed over the IPC channel; typed `echo` round-tripped; owner's database not modified |
 | — | 3 | **Not run:** PowerShell 7 session (not installed); MSI; human Tab-order pass | Pending |
 

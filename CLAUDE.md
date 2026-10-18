@@ -185,17 +185,20 @@ A phase is complete only when its acceptance criteria are **verified** (tests ru
 - **Phase 1 complete and verified 2026-10-18.**
 - **Phase 2 complete and verified 2026-10-18** (ROADMAP.md table, TESTING.md): 69 verified built-in commands, Rust search, SQLite persistence, Home management, favorites, recents, personal aliases, custom commands with import/export, Ctrl+K palette. Version 0.2.0.
 - v0.2.0 is installed per-user on the owner's PC (`%LOCALAPPDATA%\CommandDeck`), upgraded in place from 0.1.0 with owner approval on 2026-10-18. The owner's real data now lives in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`. Never test against it.
-- Still not implemented: running commands (Run is disabled), terminal sessions, privilege detection, authorization.
-- Local git only, no remote. Commit only with owner approval. Last commit: Phase 2 (`a6c4214`).
+- Still not implemented: privilege detection, authorization (Phase 4).
+- Commit only with owner approval.
 - **Phase 3 complete and verified 2026-10-18** (ROADMAP.md table, TESTING.md): real cmd.exe / Windows PowerShell sessions over ConPTY with xterm.js, command bar, Open in terminal, one-click Run for L1 built-ins, process-tree cleanup. Version 0.3.0 (built; install needs owner OK).
-- **Next: Phase 4** (privilege detection, Restart as administrator, risk analyzer + structural command-bar checks, prepare/authorize/run grants, Advanced Mode, optional app password). Start with a short plan.
+- **Phase 4 started, then paused by the owner (2026-10-18).** Unfinished `src-tauri/src/platform.rs` is untracked and not compiled in; nothing else of Phase 4 exists.
+- **Phase 5 complete and verified 2026-10-19** (ROADMAP.md table, TESTING.md): density, terminal font size / screen reader / auto-start, search shortcut choice, run history with retention, reset, malformed-settings recovery. Backend was pushed as WIP `bffb541`; frontend finished 2026-10-19.
+- Repo is public at github.com/cedishii/commanddeck (MIT). Pushing still needs explicit owner approval each session.
+- **Next:** finish Phase 4 (privilege detection, Restart as administrator, risk analyzer + structural command-bar checks, grants, Advanced Mode, optional app password), then Phase 6. Ask the owner before starting either.
 - Environment (verified 2026-10-18): Windows 11 build 26300 x64, Node 24.20.0, npm 11.19.0, git 2.55, WebView2 155, Windows PowerShell 5.1, **VS 2022 Build Tools 17.14.42** (`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`, VC x64 tools), **Windows SDK 10.0.26100.0**, **rustup 1.29.1 / rustc + cargo 1.99.1 stable-x86_64-pc-windows-msvc** (user-level, `%USERPROFILE%\.cargo\bin` on user PATH; clippy and rustfmt included). Not installed: PowerShell 7 (optional).
 - Terminals opened before the Rust install won't have cargo on PATH. Open a new terminal or VS Code window.
 
 ## 11. Known issues / limitations
 
 - Unverified: MSI install, manual Tab-order pass in the native window by a human, live OS theme switch while running, PowerShell 7 (`pwsh`) sessions (not installed on the dev PC; detection is tested).
-- Terminals: stdout and stderr are merged (ConPTY). ConPTY's win32-input-mode isn't used (xterm.js speaks plain VT), so a few rare key combinations may differ from Windows Terminal. One session per shell page (no tabs yet). xterm's screen-reader mode is off (Phase 5 setting).
+- Terminals: stdout and stderr are merged (ConPTY). ConPTY's win32-input-mode isn't used (xterm.js speaks plain VT), so a few rare key combinations may differ from Windows Terminal. One session per shell page (no tabs yet). xterm's screen-reader mode is a setting (off by default).
 - The command bar has **no** high-impact detection yet (Phase 4). Until then it's exactly equivalent to typing.
 - Programs choose ANSI colors blindly. The terminal enforces minimumContrastRatio 4.5 so text stays readable in both themes, which slightly alters some program colors.
 - e2e test gotcha: xterm.js has its own hidden `<textarea>`. Select the command bar by its label, not `textarea`.

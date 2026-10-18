@@ -1,6 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '../ipc/api';
-import { DEFAULT_SETTINGS, type Settings, type SettingsPatch } from '../ipc/types';
+import { DEFAULT_SETTINGS, type SearchKey, type Settings, type SettingsPatch } from '../ipc/types';
+
+/** Display text for the configurable search shortcut, e.g. "Ctrl+K". */
+export function searchKeyLabel(key: SearchKey): string {
+  return `Ctrl+${key.toUpperCase()}`;
+}
 
 interface SettingsContextValue {
   /** Stored settings, or defaults until they've loaded (or if the backend is unavailable). */

@@ -1,6 +1,7 @@
 import { Plus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useAppContext } from '../app/context';
+import { searchKeyLabel, useSettings } from '../app/settings';
 import { CommandList } from '../components/CommandList';
 import { PageHeader } from '../components/PageHeader';
 import { buttonStyles } from '../components/ui/Modal';
@@ -28,6 +29,7 @@ type Filter = 'all' | 'favorites' | 'custom' | CategoryId;
 export function ShellPage({ shell, active, pending, onPendingConsumed }: ShellPageProps) {
   const [terminalSize, setTerminalSize] = useState<PanelSize>('normal');
   const { revision, openEditor, openSearch } = useAppContext();
+  const searchLabel = searchKeyLabel(useSettings().settings.searchShortcut);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- revision triggers a refetch after changes
   const load = useCallback(() => api.listCommands(shell), [shell, revision]);
   const { state, retry } = useAsync(load);
@@ -103,9 +105,9 @@ export function ShellPage({ shell, active, pending, onPendingConsumed }: ShellPa
               description={DESCRIPTION[shell]}
               aside={
                 <>
-                  <button type="button" className={buttonStyles.secondary} onClick={() => { openSearch('browse'); }} title="Search all commands (Ctrl+K)">
+                  <button type="button" className={buttonStyles.secondary} onClick={() => { openSearch('browse'); }} title={`Search all commands (${searchLabel})`}>
                     Search
-                    <kbd className="font-mono text-xs text-muted">Ctrl+K</kbd>
+                    <kbd className="font-mono text-xs text-muted">{searchLabel}</kbd>
                   </button>
                   <button type="button" className={buttonStyles.secondary} onClick={() => { openEditor({ mode: 'create', shell }); }}>
                     <Plus aria-hidden size={15} />

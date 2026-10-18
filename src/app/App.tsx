@@ -16,6 +16,7 @@ import { ShellPage } from '../pages/ShellPage';
 import { RunPanel } from '../terminal/RunPanel';
 import { AppContext, type AppContextValue, type EditorTarget, type SearchMode, type ToastTone } from './context';
 import { PAGES, focusPageTitle, type PageId } from './pages';
+import { useSettings } from './settings';
 
 const TOAST_MS = 4000;
 
@@ -49,6 +50,8 @@ export function App() {
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const toastId = useRef(0);
   const { state: startup } = useAsync(api.startup);
+  const { settings } = useSettings();
+  const searchKey = settings.searchShortcut;
 
   const notify = useCallback((message: string, tone: ToastTone = 'info') => {
     toastId.current += 1;
@@ -92,9 +95,9 @@ export function App() {
   const shortcuts = useMemo<ShortcutMap>(() => {
     if (overlayOpen) return {};
     const map: Record<string, () => void> = Object.fromEntries(Object.values(PAGES).map((p) => [p.shortcutKey, () => { setPage(p.id); }]));
-    map.k = () => { setSearch('browse'); };
+    map[searchKey] = () => { setSearch('browse'); };
     return map;
-  }, [overlayOpen]);
+  }, [overlayOpen, searchKey]);
   useGlobalShortcuts(shortcuts);
 
   // Move focus to the new page's title so keyboard and screen-reader users land in the content.

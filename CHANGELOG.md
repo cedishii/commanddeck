@@ -2,6 +2,20 @@
 
 All notable changes to CommandDeck. Format based on Keep a Changelog.
 
+## [Unreleased] — Phase 5: settings & refinement
+
+### Added
+- Density setting (comfortable / compact).
+- Terminal settings: font size (11–20 px) and screen reader support, both applied to open terminals without restarting them; option to not start sessions automatically (a Start session button appears instead).
+- Choice of search shortcut: Ctrl+K, Ctrl+P or Ctrl+J (Ctrl+Shift+same letter inside a terminal). All hints and the shortcut list follow the choice.
+- Run history in Settings: one-click runs with exit code, duration and time. Only metadata is kept, never output. Keep for 7, 30 or 90 days, forever, or off; clear at any time.
+
+### Changed
+- Reset preferences also resets the new settings. Run history is kept.
+
+### Fixed
+- Settings page no longer makes the whole window scroll (hidden form helpers escaped the scroll area).
+
 ## [0.3.0] — 2026-10-18 (Phase 3: terminal & running commands)
 
 ### Added

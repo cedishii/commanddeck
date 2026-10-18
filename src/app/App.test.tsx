@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { installFakeBackend } from '../test/fakeBackend';
 import { renderApp } from '../test/render';
 import { App } from './App';
+import { SettingsProvider } from './settings';
 import { ThemeProvider } from './theme';
 
 function nav() {
@@ -75,7 +76,9 @@ describe('App navigation', () => {
     render(
       <StrictMode>
         <ThemeProvider>
-          <App />
+          <SettingsProvider>
+            <App />
+          </SettingsProvider>
         </ThemeProvider>
       </StrictMode>,
     );

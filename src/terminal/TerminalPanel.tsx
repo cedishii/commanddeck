@@ -1,6 +1,7 @@
-import { ChevronDown, ChevronUp, Eraser, Maximize2, Minimize2, Power, RotateCcw, SquareTerminal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eraser, Maximize2, Minimize2, Play, Power, RotateCcw, SquareTerminal } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useAppContext } from '../app/context';
+import { useSettings } from '../app/settings';
 import { buttonStyles } from '../components/ui/Modal';
 import { SHELL_LABEL, type Shell } from '../domain/command';
 import { api } from '../ipc/api';
@@ -43,6 +44,8 @@ const iconButton = 'inline-flex h-7 w-7 items-center justify-center rounded-md t
 /** A live shell session (ConPTY) with a command bar. */
 export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPendingConsumed }: TerminalPanelProps) {
   const { openSearch, navigate } = useAppContext();
+  const { settings, loaded } = useSettings();
+  const searchCode = `Key${settings.searchShortcut.toUpperCase()}`;
   const terminal = useRef<TerminalHandle | null>(null);
   const barRef = useRef<HTMLTextAreaElement>(null);
   const [kind, setKind] = useState<ShellKind>(shell === 'cmd' ? 'cmd' : 'powershell');
@@ -65,11 +68,13 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
   }, [shell]);
 
   useEffect(() => {
+    // Waits for stored settings so "start sessions automatically: off" is respected on launch.
+    if (!loaded || !settings.autoStartSessions) return;
     if (active && size !== 'collapsed' && !started.current) {
       started.current = true;
       void session.start();
     }
-  }, [active, size, session]);
+  }, [active, size, session, loaded, settings.autoStartSessions]);
 
   // Adopt "Open in terminal" text once per request (state adjusted during render, per React guidance).
   const [appliedNonce, setAppliedNonce] = useState<number | null>(null);
@@ -94,7 +99,7 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
   const onAppShortcut = useCallback(
     (e: KeyboardEvent): boolean => {
       if (!(e.ctrlKey && e.shiftKey) || e.altKey) return false;
-      if (e.code === 'KeyK') {
+      if (e.code === searchCode) {
         openSearch('browse');
         return true;
       }
@@ -110,7 +115,7 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
       }
       return false;
     },
-    [openSearch, navigate],
+    [openSearch, navigate, searchCode],
   );
 
   const send = () => {
@@ -150,9 +155,15 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
           </label>
         ) : null}
         <div className="ml-auto flex items-center gap-0.5">
-          <button type="button" className={iconButton} aria-label="Restart session" title="Restart session" onClick={() => { void session.start(); }}>
-            <RotateCcw aria-hidden size={15} />
-          </button>
+          {session.status.kind === 'idle' ? (
+            <button type="button" className={iconButton} aria-label="Start session" title="Start session" onClick={() => { started.current = true; void session.start(); }}>
+              <Play aria-hidden size={15} />
+            </button>
+          ) : (
+            <button type="button" className={iconButton} aria-label="Restart session" title="Restart session" onClick={() => { void session.start(); }}>
+              <RotateCcw aria-hidden size={15} />
+            </button>
+          )}
           <button type="button" className={iconButton} aria-label="End session" title="End session (stops everything it started)" disabled={!running} onClick={() => { void session.end(); }}>
             <Power aria-hidden size={15} />
           </button>
@@ -187,6 +198,8 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
             onData={(d) => { session.write(d); }}
             onResize={session.resize}
             onAppShortcut={onAppShortcut}
+            fontSize={settings.terminalFontSize}
+            screenReaderMode={settings.terminalScreenReader}
           />
         </div>
         <div className="flex items-start gap-2 px-3 py-2">
@@ -206,7 +219,7 @@ export function TerminalPanel({ shell, active, size, onSizeChange, pending, onPe
           <button type="button" className={buttonStyles.primary} disabled={!running || !bar.trim()} onClick={send}>Run</button>
         </div>
         <p className="px-3 pb-2 text-xs text-muted">
-          This is the real {EXECUTABLE[kind]}. CommandDeck doesn’t check or change what you type here. In the terminal: Ctrl+Shift+E moves to the command bar, Ctrl+Shift+K searches.
+          This is the real {EXECUTABLE[kind]}. CommandDeck doesn’t check or change what you type here. In the terminal: Ctrl+Shift+E moves to the command bar, Ctrl+Shift+{settings.searchShortcut.toUpperCase()} searches.
         </p>
       </div>
     </section>

@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import { vi } from 'vitest';
 import { App } from '../app/App';
 import { AppContext, type AppContextValue } from '../app/context';
+import { SettingsProvider } from '../app/settings';
 import { ThemeProvider } from '../app/theme';
 
 type Rendered = RenderResult & { user: UserEvent };
@@ -11,7 +12,7 @@ type Rendered = RenderResult & { user: UserEvent };
 /** Renders the whole app (all overlays and providers). Install a fake backend first. */
 export function renderApp(): Rendered {
   const user = userEvent.setup();
-  return { user, ...render(<ThemeProvider><App /></ThemeProvider>) };
+  return { user, ...render(<ThemeProvider><SettingsProvider><App /></SettingsProvider></ThemeProvider>) };
 }
 
 /** Renders a component with a stub app context. Returns the context's spies. */
@@ -34,7 +35,9 @@ export function renderWithContext(ui: ReactElement, overrides: Partial<AppContex
     context,
     ...render(
       <ThemeProvider>
-        <AppContext.Provider value={context}>{ui}</AppContext.Provider>
+        <SettingsProvider>
+          <AppContext.Provider value={context}>{ui}</AppContext.Provider>
+        </SettingsProvider>
       </ThemeProvider>,
     ),
   };

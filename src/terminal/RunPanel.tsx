@@ -1,5 +1,7 @@
 import { Play, Square, X } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
+import { useAppContext } from '../app/context';
+import { useSettings } from '../app/settings';
 import { ShellBadge } from '../components/ui/Badge';
 import { buttonStyles } from '../components/ui/Modal';
 import { useDialog } from '../hooks/useDialog';
@@ -27,6 +29,18 @@ export function RunPanel({ command, onClose }: RunPanelProps) {
     [command.id],
   );
   const run = useTerminalSession(terminal, starter);
+  const { settings } = useSettings();
+  const { invalidate } = useAppContext();
+  const finished = run.status.kind === 'exited';
+  // The backend records the run when it ends; refresh views that show history.
+  // `invalidate` changes identity on every revision, so read it through a ref to refresh once per finish.
+  const invalidateRef = useRef(invalidate);
+  useEffect(() => {
+    invalidateRef.current = invalidate;
+  }, [invalidate]);
+  useEffect(() => {
+    if (finished) invalidateRef.current();
+  }, [finished]);
   const { start } = run;
 
   useEffect(() => {
@@ -73,7 +87,7 @@ export function RunPanel({ command, onClose }: RunPanelProps) {
           </button>
         </header>
         <div className="min-h-0 flex-1">
-          <XtermView handleRef={terminal} ariaLabel={`Output of ${command.name}`} onData={(d) => { run.write(d); }} onResize={run.resize} />
+          <XtermView handleRef={terminal} ariaLabel={`Output of ${command.name}`} onData={(d) => { run.write(d); }} onResize={run.resize} fontSize={settings.terminalFontSize} screenReaderMode={settings.terminalScreenReader} />
         </div>
         <footer className="flex items-center gap-2 border-t border-border px-5 py-2.5">
           <p

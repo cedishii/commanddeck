@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
+import { SettingsProvider } from './app/settings';
 import { ThemeProvider } from './app/theme';
 import './styles/global.css';
 
@@ -10,7 +11,9 @@ if (!root) throw new Error('Root element #root is missing from index.html');
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
-      <App />
+      <SettingsProvider>
+        <App />
+      </SettingsProvider>
     </ThemeProvider>
   </StrictMode>,
 );

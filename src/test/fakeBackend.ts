@@ -7,7 +7,7 @@
  * (shapes and error kinds), not its full logic. The real rules are tested in Rust.
  */
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks';
-import type { Command, CommandView, CustomDraft, HomeView, PtyEvent, Settings, Shell } from '../ipc/types';
+import { DEFAULT_SETTINGS, type Command, type CommandView, type CustomDraft, type HistoryEntry, type HomeView, type PtyEvent, type Settings, type Shell } from '../ipc/types';
 
 interface FakeSession {
   readonly id: number;
@@ -68,6 +68,7 @@ export interface FakeBackendOptions {
   readonly home?: readonly string[];
   readonly settings?: Partial<Settings>;
   readonly notice?: string | null;
+  readonly history?: readonly HistoryEntry[];
 }
 
 export interface FakeBackend {
@@ -83,6 +84,7 @@ export interface FakeBackend {
     favorites: Set<string>;
     recents: string[];
     aliases: Map<string, string[]>;
+    history: HistoryEntry[];
   };
   callsTo: (cmd: string) => Payload[];
   readonly sessions: FakeSession[];
@@ -99,10 +101,11 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
   const state: FakeBackend['state'] = {
     commands: [...(options.commands ?? FIXTURE_COMMANDS)],
     home: (options.home ?? ['cmd.ping', 'cmd.ipconfig.all', 'ps.get-process']).map((id) => ({ id, label: null, note: null })),
-    settings: { theme: 'system', quickActionLimit: 10, ...options.settings },
+    settings: { ...DEFAULT_SETTINGS, ...options.settings },
     favorites: new Set(),
     recents: [],
     aliases: new Map(),
+    history: [...(options.history ?? [])],
   };
   const calls: FakeBackend['calls'] = [];
   const failures = new Map<string, ErrorPayload>();
@@ -234,7 +237,7 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
       return state.settings;
     },
     settings_reset: () => {
-      state.settings = { theme: 'system', quickActionLimit: 10 };
+      state.settings = { ...DEFAULT_SETTINGS };
       return state.settings;
     },
     favorite_set: (a) => {
@@ -252,6 +255,11 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     recents_get: () => state.recents.map((id) => view(find(id))),
     recents_clear: () => {
       state.recents = [];
+      return null;
+    },
+    history_get: (a) => state.history.slice(0, (a.limit as number | undefined) ?? 50),
+    history_clear: () => {
+      state.history = [];
       return null;
     },
     aliases_set: (a) => {

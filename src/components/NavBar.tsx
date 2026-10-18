@@ -1,6 +1,7 @@
 import { House, Search, Settings, SquareTerminal, Terminal, type LucideIcon } from 'lucide-react';
 import logoUrl from '../assets/logo-64.png';
 import { PAGES, type PageId } from '../app/pages';
+import { searchKeyLabel, useSettings } from '../app/settings';
 
 interface NavBarProps {
   readonly current: PageId;
@@ -53,6 +54,7 @@ function PrivilegeBadge() {
 }
 
 export function NavBar({ current, onNavigate, onSearch }: NavBarProps) {
+  const searchKey = useSettings().settings.searchShortcut;
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
       <div className="flex items-center gap-2 pr-2">
@@ -68,12 +70,12 @@ export function NavBar({ current, onNavigate, onSearch }: NavBarProps) {
             <button
               type="button"
               onClick={onSearch}
-              aria-keyshortcuts="Control+K"
+              aria-keyshortcuts={`Control+${searchKey.toUpperCase()}`}
               className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-surface-2 px-2.5 text-sm text-muted hover:text-fg"
             >
               <Search aria-hidden size={14} />
               Search
-              <kbd className="font-mono text-xs">Ctrl+K</kbd>
+              <kbd className="font-mono text-xs">{searchKeyLabel(searchKey)}</kbd>
             </button>
           ) : null}
           {/* Advanced Mode badge slot (Phase 4) */}

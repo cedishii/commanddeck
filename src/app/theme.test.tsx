@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_SETTINGS } from '../ipc/types';
 import { installFakeBackend } from '../test/fakeBackend';
 import { renderApp } from '../test/render';
 import { mediaState } from '../test/setup';
@@ -96,9 +97,9 @@ describe('SettingsPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Reset preferences' }));
     const confirm = screen.getByRole('dialog', { name: 'Reset preferences?' });
-    expect(confirm).toHaveTextContent('Your custom commands, favorites and aliases are kept.');
+    expect(confirm).toHaveTextContent('Your custom commands, favorites, aliases and run history are kept.');
     await user.click(within(confirm).getByRole('button', { name: 'Reset' }));
-    await waitFor(() => { expect(backend.state.settings).toEqual({ theme: 'system', quickActionLimit: 10 }); });
+    await waitFor(() => { expect(backend.state.settings).toEqual(DEFAULT_SETTINGS); });
     expect(await screen.findByText('Preferences reset')).toBeInTheDocument();
   });
 });

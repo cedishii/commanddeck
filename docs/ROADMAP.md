@@ -103,9 +103,19 @@ Key criteria from D8/D14:
 - **Command bar:** a false-positive suite of legitimate admin and maintenance commands (`sfc /scannow`, `DISM … /RestoreHealth`, `ipconfig /flushdns`, `Restart-Service`, `del` in a temp dir, `Remove-Item -Recurse` on a project folder) produces **no** prompt. A true-positive suite (format, diskpart clean, recursive delete of root/Windows/System32/profile via aliases, env vars, `..` and short names) produces **one** prompt. Unparseable lines are sent without prompt. Sent bytes equal typed bytes.
 - **Advanced Mode:** no L2 confirmations; free-form custom scripts run; L3 identified operations still confirm; badge visible; password gate only if configured.
 
-## Phase 5 — Settings & refinement ☐
+## Phase 5 — Settings & refinement ✅ (2026-10-19)
 
 Appearance/density; shortcut customization (no conflicts with terminal input); execution preferences; history retention & redaction; reset preferences; accessibility pass; recovery from malformed settings.
+
+| Criterion | How it was verified |
+|-----------|---------------------|
+| Density (comfortable / compact), applied live and restored on launch | Vitest + real-app e2e (`data-density` after reload) |
+| Search shortcut Ctrl+K / P / J; terminal variant Ctrl+Shift+same; old key freed | Vitest (global + in-terminal) + real-app e2e. Choices exclude every other app key and Ctrl+Shift+C/E/V, so no conflict with terminal input; backend accepts only that set |
+| Execution preferences: terminal font size 11–20 and screen-reader mode applied live without restarting the session; auto-start sessions on/off | Vitest + real-app e2e (13 px → 18 px, same PID) |
+| Run history: metadata only (command id, start, duration, exit code), never output or arguments; retention Off / 7 / 30 / 90 days / Forever; capped at 1000 rows; clear | Rust store + app tests; Vitest list/clear/retention; real-app e2e (run → listed with exit 0) |
+| Reset preferences covers all new settings, keeps run history | Rust test + Vitest |
+| Recovery from malformed settings: bad or out-of-range stored values fall back to defaults per key | Rust `malformed_settings_fall_back_to_defaults` |
+| Accessibility pass: native radios/checkboxes/select with labels and legends, focus-visible rings, screen-reader terminal option, document never scrolls (found and fixed an overflow) | Vitest role queries + real-app measurement. **Not done:** a pass with a real screen reader by a human |
 
 ## Phase 6 — Integration & regression ☐
 
