@@ -174,9 +174,9 @@ A phase is complete only when its acceptance criteria are **verified** (tests ru
 - **Phase 0 complete (2026-10-18).** Docs written, owner decisions recorded (D8, D14–D16), toolchain installed with owner approval and verified.
 - **Phase 1 complete and verified 2026-10-18.**
 - **Phase 2 complete and verified 2026-10-18** (ROADMAP.md table, TESTING.md): 69 verified built-in commands, Rust search, SQLite persistence, Home management, favorites, recents, personal aliases, custom commands with import/export, Ctrl+K palette. Version 0.2.0.
-- v0.1.0 is installed per-user on the owner's PC (`%LOCALAPPDATA%\CommandDeck`). 0.2.0 installers are built but **not installed**. Ask before upgrading the owner's install.
+- v0.2.0 is installed per-user on the owner's PC (`%LOCALAPPDATA%\CommandDeck`), upgraded in place from 0.1.0 with owner approval on 2026-10-18. The owner's real data now lives in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`. Never test against it.
 - Still not implemented: running commands (Run is disabled), terminal sessions, privilege detection, authorization.
-- Local git only, no remote. Commit only with owner approval.
+- Local git only, no remote. Commit only with owner approval. Last commit: Phase 2 (`a6c4214`).
 - **Next: Phase 3** (native terminal: PTY spike → ConPTY sessions, xterm.js, one-off structured runner). Start with a short plan and confirm with the owner.
 - Environment (verified 2026-10-18): Windows 11 build 26300 x64, Node 24.20.0, npm 11.19.0, git 2.55, WebView2 155, Windows PowerShell 5.1, **VS 2022 Build Tools 17.14.42** (`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`, VC x64 tools), **Windows SDK 10.0.26100.0**, **rustup 1.29.1 / rustc + cargo 1.99.1 stable-x86_64-pc-windows-msvc** (user-level, `%USERPROFILE%\.cargo\bin` on user PATH; clippy and rustfmt included). Not installed: PowerShell 7 (optional).
 - Terminals opened before the Rust install won't have cargo on PATH. Open a new terminal or VS Code window.

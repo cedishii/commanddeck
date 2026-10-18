@@ -76,7 +76,8 @@ Registry versions checked 2026-10-18: tauri 2.12.4, @tauri-apps/cli 2.12.3, @xte
 | 2026-10-18 | 2 | Restart persistence (tauri dev auto-restart after a Rust change, same data dir) | Theme dark, Home 10 items, recents kept across the new process |
 | 2026-10-18 | 2 | `npm run tauri build` (0.2.0) | Pass: `CommandDeck_0.2.0_x64-setup.exe` (2.91 MB), `CommandDeck_0.2.0_x64_en-US.msi` (4.19 MB) |
 | 2026-10-18 | 2 | Release exe under the **production CSP** (isolated WebView2 profile; the real data folder had no database, so the one created was deleted afterwards) | IPC works: 69 commands, search correct, fresh seed = 8 quick actions, 8 rows rendered. Data folder restored to its prior state |
-| — | 2 | **Not run:** installing 0.2.0 over the owner's 0.1.0 (needs owner OK); MSI install; human Tab-order pass | Pending |
+| 2026-10-18 | 2 | Upgrade the owner's 0.1.0 → 0.2.0 via NSIS `/S` (owner approved; 0.1.0 closed normally first) | Exit 0. One uninstall entry (CommandDeck 0.2.0), exe version 0.2.0, app launches and responds, database created in the app data folder |
+| — | 2 | **Not run:** MSI install; human Tab-order pass | Pending |
 
 How the real-app e2e works (repeatable): set `COMMANDDECK_DATA_DIR` and `WEBVIEW2_USER_DATA_FOLDER` to scratch folders and `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223`, then run `npm run tauri dev`. Then connect to `http://127.0.0.1:9223/json` and evaluate scripts / send `Input.dispatchMouseEvent` and `Input.dispatchKeyEvent`. The driver used was a small Node script (Node 24 has built-in WebSocket). It lived in the session scratchpad, so moving it into `tests/e2e/` is a Phase 3 task.
 
