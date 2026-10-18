@@ -70,7 +70,28 @@ export interface CommandView extends Command {
   readonly userAliases: readonly string[];
   /** Custom commands only: chains, pipes, spans lines or runs a script. */
   readonly multiStep: boolean;
+  /** One-click Run allowed (backend policy). Otherwise use "Open in terminal". */
+  readonly runnable: boolean;
+  readonly runBlockedReason: string | null;
 }
+
+export type ShellKind = 'cmd' | 'powershell' | 'pwsh';
+
+export interface ShellInfo {
+  readonly id: ShellKind;
+  readonly label: string;
+  readonly path: string | null;
+  readonly available: boolean;
+}
+
+export interface SessionInfo {
+  readonly sessionId: number;
+  readonly pid: number;
+  readonly program: string;
+}
+
+/** Terminal event; output data is base64 of raw terminal bytes. */
+export type PtyEvent = { readonly kind: 'output'; readonly data: string } | { readonly kind: 'exit'; readonly code: number };
 
 export interface QuickAction {
   readonly command: CommandView;

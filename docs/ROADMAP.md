@@ -72,7 +72,22 @@ Scope as planned: structured JSON catalog with verified starter entries, backend
 
 Not in scope / deferred: typo-tolerant search, catalog entries with runnable parameters (Phase 3 invocation), installing 0.2.0 over the owner's 0.1.0 (needs owner OK).
 
-## Phase 3 — Native terminal integration ☐
+## Phase 3 — Native terminal integration ☑ (2026-10-18)
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| 1 | Evaluate the PTY approach | ☑ | Direct ConPTY chosen over portable-pty (D23): suspended start + Job Object, maintenance |
+| 2 | Real cmd.exe and Windows PowerShell sessions in the app; persistent state | ☑ | Real-app e2e: banner + prompt; `set`/`cd`/variables persist; PS 5, Unicode `π ✓ é` |
+| 3 | Keystrokes reach the shell unmodified: history, Tab completion, prompts, Ctrl+C | ☑ | e2e with trusted CDP input: `dir Doc`+Tab → `Documents`, ↑ recall, Esc clears, Ctrl+C stops `ping -t`; Rust test for `set /p` input |
+| 4 | Only documented app shortcuts intercepted while a terminal has focus | ☑ | Tests: Ctrl+K / Ctrl+1 go to the shell; Ctrl+Shift+E / Ctrl+Shift+K handled |
+| 5 | Command bar writes exactly the typed text | ☑ | `commandBarInput` tests; UI test of exact bytes; real-app e2e |
+| 6 | Output, exit status, long-running commands, cancellation, restart/close | ☑ | Rust tests (exit codes 3/7/0, kill); UI tests; e2e Run `ipconfig /all` exit 0, Stop |
+| 7 | Session cleanup kills the whole tree; nothing orphaned on app exit | ☑ | Rust job test (0 active after kill); OS-level e2e: End session and app close, 0 survivors |
+| 8 | Failed launches handled | ☑ | Rust test (missing exe → error); UI test ("Couldn't start: …") |
+| 9 | "Open in terminal" bridge; one-off structured runner clearly distinct from sessions | ☑ | UI tests + e2e: command bar filled, focused, not executed; Run drawer with live output |
+| 10 | Checks and release build pass | ☑ | See TESTING.md Phase 3 rows |
+
+Deferred: PowerShell 7 session test (not installed here), terminal tabs, screen-reader mode, Phase 4 command-bar checks. Original scope notes follow.
 
 PTY spike (portable-pty vs direct ConPTY) → session manager with Job Objects; xterm.js view; cmd, powershell 5.1, pwsh 7 (if found); resize, UTF-8, exit status, restart/close, Ctrl+C passthrough; "Open in terminal" bridge; structured one-off runner with streamed output and cancel.
 

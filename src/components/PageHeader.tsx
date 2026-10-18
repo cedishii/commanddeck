@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { PAGE_TITLE_ID } from '../app/pages';
 
 interface PageHeaderProps {
   readonly title: string;
@@ -12,7 +11,7 @@ export function PageHeader({ title, description, aside }: PageHeaderProps) {
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 id={PAGE_TITLE_ID} tabIndex={-1} className="text-xl font-semibold tracking-tight focus-visible:outline-none">
+        <h1 tabIndex={-1} className="text-xl font-semibold tracking-tight focus-visible:outline-none">
           {title}
         </h1>
         {description ? <p className="mt-0.5 text-sm text-muted">{description}</p> : null}

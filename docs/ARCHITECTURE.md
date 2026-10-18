@@ -176,7 +176,23 @@ Guarded by relevance tests ("flush dns", "fix internet", "find large files", "se
 
 `app_startup`, `catalog_list/get/search/open_source`, `home_get/add/remove/move/update`, `settings_get/update/reset`, `favorite_set`, `recent_record`, `recents_get/clear`, `aliases_set`, `custom_create/update/delete/export/import`. All are async. Inputs are typed serde structs with `deny_unknown_fields`, and errors serialize as `{ kind, message, fields? }`.
 
-## 6. Terminal integration
+## 6. Terminal integration (as built in Phase 3)
+
+```
+xterm.js (XtermView) ──onData──▶ pty_write(id, text) ──▶ WriteFile(input pipe) ──▶ ConPTY ──▶ cmd.exe / powershell.exe
+      ▲                                                                                │
+      └── write(bytes) ◀── Channel<PtyEvent{output|exit}> ◀── reader thread ◀── ReadFile(output pipe)
+```
+
+- **Spawn** (`pty/conpty.rs`): two pipes → `CreatePseudoConsole` → attribute list with `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` → `CreateProcessW(… CREATE_SUSPENDED …)`. Std handles are set to invalid so the child can't inherit CommandDeck's own. Then `CreateJobObject` + `KILL_ON_JOB_CLOSE`, `AssignProcessToJobObject`, `ResumeThread`.
+- **Threads per process**: a reader forwards output. A waiter waits for exit, then lets output go quiet (≤2 s, so ConPTY's last frame isn't lost), closes the pseudoconsole, joins the reader, and only then emits `Exit`. So **Exit is always the last event**.
+- **Kill** = `TerminateJobObject`: the whole tree, nothing else. App exit closes the job handles, and KILL_ON_JOB_CLOSE does the rest.
+- **Shells** (`pty/mod.rs`): paths come from `GetSystemDirectoryW` (`cmd.exe`, `WindowsPowerShell\v1.0\powershell.exe`), plus `pwsh.exe` under Program Files if present. Interactive sessions start like a normal terminal would (cmd AutoRun and PowerShell profiles load) in the user's home folder.
+- **One-off runs** run the catalog syntax verbatim. CMD: `cmd.exe /d /s /c "<syntax>"`. PowerShell: `-NoLogo -NoProfile -NonInteractive -EncodedCommand <UTF-16LE base64>`, so the text is never re-parsed by a command line.
+- **Limits**: 16 sessions, 1 MB per write, 1–1000 columns/rows.
+- **Frontend**: `useTerminalSession` binds one xterm to one backend process. It uses a generation counter so events from a replaced process are ignored, and kills the process on unmount. `TerminalPanel` adds the status, the command bar (text + CR per line, exactly as typing), and restart/end/clear/collapse/maximize. `RunPanel` is a drawer for one-off runs with Stop and Run again.
+
+### Original design notes
 
 - ConPTY (`CreatePseudoConsole`, Windows 10 1809+). Both target OS versions support it.
 - Output: PTY reader thread → bytes → Tauri `Channel<Vec<u8>>` → xterm.js `write()`. Backpressure via bounded buffer.
@@ -251,5 +267,15 @@ Hard constraint: a Medium-integrity process cannot create an elevated child atta
 | thiserror 2 | Typed `AppError` |
 | tauri-plugin-opener 2.7 | Opens catalog documentation in the default browser. Called **only from Rust** with URLs taken from the built-in catalog; no webview permission granted |
 | tempfile 3 (dev) | Disposable folders for database tests |
+
+### Dependencies (Phase 3)
+
+| Package | Why |
+|---|---|
+| windows 0.62 | ConPTY, pipes, process creation, Job Objects, `GetSystemDirectoryW`. Official Microsoft bindings |
+| base64 0.23 | Encodes terminal output for the IPC channel, and `-EncodedCommand` for PowerShell runs |
+| @xterm/xterm 6, @xterm/addon-fit 0.11 | Terminal rendering (the renderer VS Code uses) and fitting to the panel size |
+
+`portable-pty` was evaluated and not used (D23).
 
 Dependencies are added to these tables as they're introduced, with reason.

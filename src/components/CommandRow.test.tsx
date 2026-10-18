@@ -6,7 +6,7 @@ import { renderWithContext } from '../test/render';
 import { CommandRow } from './CommandRow';
 
 function viewOf(partial: Parameters<typeof command>[0], extra: Partial<CommandView> = {}): CommandView {
-  return { ...command(partial), favorite: false, onHome: false, userAliases: [], multiStep: false, ...extra };
+  return { ...command(partial), favorite: false, onHome: false, userAliases: [], multiStep: false, runnable: true, runBlockedReason: null, ...extra };
 }
 
 const routine = viewOf({ id: 'cmd.ipconfig.all', name: 'View network configuration', summary: 'Shows adapters.', syntax: 'ipconfig /all' });
@@ -70,9 +70,21 @@ describe('CommandRow', () => {
     expect(within(row).getByText('ipconfig /all')).toBeInTheDocument();
   });
 
-  it('marks Run as unavailable until execution exists', () => {
-    const { row } = renderRow(routine);
-    expect(within(row).getByRole('button', { name: /^Run .*not available yet/ })).toHaveAttribute('aria-disabled', 'true');
+  it('offers Run for runnable commands and Open in terminal otherwise, with the reason', async () => {
+    const { user, row, context } = renderRow(routine);
+    await user.click(within(row).getByRole('button', { name: 'Run View network configuration' }));
+    expect(context.runCommand).toHaveBeenCalledWith(routine);
+
+    const blocked = viewOf(
+      { id: 'cmd.del', name: 'Delete a file', syntax: 'del "<File>"', risk: 'L2', modifies: true },
+      { runnable: false, runBlockedReason: 'This changes your system.' },
+    );
+    const { row: blockedRow, context: ctx2 } = renderRow(blocked);
+    expect(within(blockedRow).queryByRole('button', { name: /^Run / })).not.toBeInTheDocument();
+    const open = within(blockedRow).getByRole('button', { name: 'Open Delete a file in the terminal' });
+    expect(open).toHaveAttribute('title', 'This changes your system.');
+    await user.click(open);
+    expect(ctx2.openInTerminal).toHaveBeenCalledWith(blocked);
   });
 
   it('opens the overflow menu with arrow keys and closes it with Esc', async () => {
@@ -83,6 +95,8 @@ describe('CommandRow', () => {
     const menu = screen.getByRole('menu');
     expect(within(menu).getByRole('menuitem', { name: 'Add to Home' })).toHaveFocus();
     await user.keyboard('{ArrowDown}');
+    expect(within(menu).getByRole('menuitem', { name: 'Open in terminal' })).toHaveFocus();
+    await user.keyboard('{End}');
     expect(within(menu).getByRole('menuitem', { name: 'Details' })).toHaveFocus();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();

@@ -41,6 +41,7 @@ const TEXT_PAIRS: readonly [string, string][] = [
   ['--cd-risk3-fg', '--cd-risk3-bg'],
   ['--cd-admin-fg', '--cd-admin-bg'],
   ['--cd-danger-fg', '--cd-surface'],
+  ['--cd-term-fg', '--cd-term-bg'],
 ];
 
 describe('design tokens', () => {

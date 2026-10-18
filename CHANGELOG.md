@@ -2,6 +2,17 @@
 
 All notable changes to CommandDeck. Format based on Keep a Changelog.
 
+## [0.3.0] — 2026-10-18 (Phase 3: terminal & running commands)
+
+### Added
+- Real CMD and Windows PowerShell sessions on their pages (Windows ConPTY + xterm.js). History, Tab completion, prompts, colors and Ctrl+C behave like a normal console. Restart, end, clear, collapse and maximize. Sessions survive switching pages.
+- Command bar under each terminal: type or review a command and press Enter. It's sent exactly as typed.
+- "Open in terminal" for every command. It fills the command bar of the right shell without running it.
+- One-click Run for routine built-in commands, with live output, exit code, Stop and Run again. Commands that change the system, need values, or are custom open in the terminal instead (until Phase 4 adds confirmations).
+- Every shell and run lives in its own Windows Job Object. Ending it, or closing CommandDeck, stops everything it started.
+- PowerShell 7 is offered automatically if installed.
+- Terminal color palettes for light and dark themes, with a minimum contrast so program output stays readable.
+
 ## [0.2.0] — 2026-10-18 (Phase 2: catalog & discovery)
 
 ### Added

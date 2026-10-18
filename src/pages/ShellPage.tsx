@@ -1,4 +1,4 @@
-import { Plus, SquareTerminal } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useAppContext } from '../app/context';
 import { CommandList } from '../components/CommandList';
@@ -9,9 +9,13 @@ import { categoriesFor } from '../domain/categories';
 import { SHELL_LABEL, type CategoryId, type Shell } from '../domain/command';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../ipc/api';
+import { TerminalPanel, type PanelSize } from '../terminal/TerminalPanel';
 
 interface ShellPageProps {
   readonly shell: Shell;
+  readonly active: boolean;
+  readonly pending: { readonly text: string; readonly nonce: number } | null;
+  readonly onPendingConsumed: () => void;
 }
 
 const DESCRIPTION: Record<Shell, string> = {
@@ -19,14 +23,10 @@ const DESCRIPTION: Record<Shell, string> = {
   powershell: 'PowerShell library and session. Cmdlets, not CMD commands.',
 };
 
-const EXECUTABLE: Record<Shell, string> = {
-  cmd: 'cmd.exe',
-  powershell: 'powershell.exe',
-};
-
 type Filter = 'all' | 'favorites' | 'custom' | CategoryId;
 
-export function ShellPage({ shell }: ShellPageProps) {
+export function ShellPage({ shell, active, pending, onPendingConsumed }: ShellPageProps) {
+  const [terminalSize, setTerminalSize] = useState<PanelSize>('normal');
   const { revision, openEditor, openSearch } = useAppContext();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- revision triggers a refetch after changes
   const load = useCallback(() => api.listCommands(shell), [shell, revision]);
@@ -81,7 +81,8 @@ export function ShellPage({ shell }: ShellPageProps) {
         : 'No commands in this category yet.';
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-0 flex-1" hidden={terminalSize === 'maximized'}>
       <aside className="w-56 shrink-0 overflow-y-auto border-r border-border bg-surface px-2 py-4">
         <nav aria-label={`${label} categories`}>
           <ul className="space-y-0.5">
@@ -123,19 +124,18 @@ export function ShellPage({ shell }: ShellPageProps) {
             {state.status === 'ready' && visible.length > 0 ? <CommandList entries={visible} label={`${label} commands`} /> : null}
           </div>
 
-          <section aria-labelledby={`${shell}-session-title`} className="rounded-lg border border-dashed border-border p-4">
-            <div className="flex items-start gap-3">
-              <SquareTerminal aria-hidden size={20} className="mt-0.5 text-muted" />
-              <div>
-                <h2 id={`${shell}-session-title`} className="font-medium">{label} session</h2>
-                <p className="text-sm text-muted">
-                  A live, persistent {EXECUTABLE[shell]} session runs here from Phase 3, through Windows ConPTY. Not available yet.
-                </p>
-              </div>
-            </div>
-          </section>
         </div>
       </div>
+      </div>
+
+      <TerminalPanel
+        shell={shell}
+        active={active}
+        size={terminalSize}
+        onSizeChange={setTerminalSize}
+        pending={pending}
+        onPendingConsumed={onPendingConsumed}
+      />
     </div>
   );
 }

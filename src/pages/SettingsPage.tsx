@@ -230,7 +230,7 @@ export function SettingsPage() {
 
       <Card title="About">
         <dl className="grid grid-cols-[8rem_1fr] gap-y-1 text-sm">
-          <dt className="text-muted">Version</dt><dd>0.2.0 (Phase 2: catalog and discovery)</dd>
+          <dt className="text-muted">Version</dt><dd>0.3.0 (Phase 3: terminal and running commands)</dd>
           <dt className="text-muted">Built-in commands</dt><dd>{startup ? `${startup.builtinCount}, each verified against Windows and Microsoft docs` : '…'}</dd>
           <dt className="text-muted">Author</dt><dd>Cedrick Kaneko</dd>
           <dt className="text-muted">Privacy</dt><dd>Runs entirely on this PC. No accounts, telemetry or network access.</dd>

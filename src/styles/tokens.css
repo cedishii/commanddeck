@@ -36,6 +36,13 @@
   --cd-danger-fg: #9b1c27;
   --cd-overlay: rgb(15 18 28 / 0.35);
   --cd-shadow: 0 8px 28px rgb(15 18 28 / 0.14);
+
+  /* Terminal: "One Half Light" ANSI palette (Windows Terminal) for readable colors on light backgrounds. */
+  --cd-term-bg: #fafafa;
+  --cd-term-fg: #383a42;
+  --cd-term-cursor: #4f525d;
+  --cd-term-selection: #bfceff;
+  --cd-ansi: #383a42 #e45649 #50a14f #c18301 #0184bc #a626a4 #0997b3 #fafafa #4f525d #df6c75 #98c379 #e4c07a #61afef #c577dd #56b5c1 #ffffff;
 }
 
 :root[data-theme='dark'] {
@@ -68,4 +75,11 @@
   --cd-danger-fg: #ff9099;
   --cd-overlay: rgb(0 0 0 / 0.5);
   --cd-shadow: 0 8px 28px rgb(0 0 0 / 0.45);
+
+  /* Terminal: "Campbell" ANSI palette (Windows Terminal default). */
+  --cd-term-bg: #0c0c0c;
+  --cd-term-fg: #cccccc;
+  --cd-term-cursor: #ffffff;
+  --cd-term-selection: #264f78;
+  --cd-ansi: #0c0c0c #c50f1f #13a10e #c19c00 #0037da #881798 #3a96dd #cccccc #767676 #e74856 #16c60c #f9f1a5 #3b78ff #b4009e #61d6d6 #f2f2f2;
 }

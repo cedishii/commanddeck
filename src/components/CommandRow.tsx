@@ -1,4 +1,4 @@
-import { House, Info, Play, Star } from 'lucide-react';
+import { House, Info, Play, SquareTerminal, Star } from 'lucide-react';
 import { useAppContext } from '../app/context';
 import type { CommandEntry } from '../domain/command';
 import { useCommandActions } from '../hooks/useCommandActions';
@@ -27,7 +27,7 @@ const iconButton = 'inline-flex h-7 w-7 items-center justify-center rounded-md t
  * of noise. The details panel always shows the risk.
  */
 export function CommandRow({ entry, index, showShell = false, label, note, menuItems = [] }: CommandRowProps) {
-  const { openDetails } = useAppContext();
+  const { openDetails, openInTerminal, runCommand } = useAppContext();
   const actions = useCommandActions();
   const title = label ?? entry.name;
 
@@ -36,6 +36,7 @@ export function CommandRow({ entry, index, showShell = false, label, note, menuI
     entry.onHome
       ? { label: 'Remove from Home', icon: <House size={15} />, onSelect: () => { void actions.removeFromHome(entry); } }
       : { label: 'Add to Home', icon: <House size={15} />, onSelect: () => { void actions.addToHome(entry); } },
+    { label: 'Open in terminal', icon: <SquareTerminal size={15} />, onSelect: () => { openInTerminal(entry); } },
     { label: 'Details', icon: <Info size={15} />, onSelect: () => { openDetails(entry.id); } },
   ];
 
@@ -91,16 +92,29 @@ export function CommandRow({ entry, index, showShell = false, label, note, menuI
           <Info aria-hidden size={16} />
         </button>
         <Menu label={`More actions for ${title}`} items={items} />
-        <button
-          type="button"
-          aria-disabled="true"
-          className="ml-1 inline-flex h-7 cursor-not-allowed items-center gap-1 rounded-md border border-border px-2 text-xs font-medium text-muted"
-          aria-label={`Run ${title} (not available yet)`}
-          title="Running commands arrives in Phase 3"
-        >
-          <Play aria-hidden size={13} />
-          Run
-        </button>
+        {entry.runnable ? (
+          <button
+            type="button"
+            className="ml-1 inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs font-medium text-fg hover:bg-surface-2"
+            aria-label={`Run ${title}`}
+            title="Run now and show the output"
+            onClick={() => { runCommand(entry); }}
+          >
+            <Play aria-hidden size={13} />
+            Run
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ml-1 inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs font-medium text-fg hover:bg-surface-2"
+            aria-label={`Open ${title} in the terminal`}
+            title={entry.runBlockedReason ?? 'Open in the terminal'}
+            onClick={() => { openInTerminal(entry); }}
+          >
+            <SquareTerminal aria-hidden size={13} />
+            Open
+          </button>
+        )}
       </div>
     </li>
   );

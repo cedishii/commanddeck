@@ -38,6 +38,33 @@ pub struct CommandView {
     pub user_aliases: Vec<String>,
     /// Custom commands only: chains, pipes, spans lines or runs a script.
     pub multi_step: bool,
+    /// One-click Run is allowed (see `run_block_reason`).
+    pub runnable: bool,
+    pub run_blocked_reason: Option<String>,
+}
+
+/// Why a command can't be run with one click yet, or `None` if it can.
+///
+/// Until Phase 4 adds risk analysis and confirmation, one-click Run is limited
+/// to built-in, routine (L1), fully specified commands. Everything else stays
+/// one step away: "Open in terminal" puts it in the command bar, where the
+/// user reviews it and presses Enter themselves.
+pub fn run_block_reason(c: &Command) -> Option<&'static str> {
+    if c.source == Source::Custom {
+        Some(
+            "Custom commands open in the terminal so you can review them. One-click running with safety checks arrives in Phase 4.",
+        )
+    } else if c.risk != catalog::Risk::L1 {
+        Some(
+            "This changes your system. Open it in the terminal and press Enter yourself. One-click running with confirmation arrives in Phase 4.",
+        )
+    } else if !c.placeholders.is_empty() {
+        Some("This needs values filled in. Open it in the terminal and edit it first.")
+    } else if c.shell == Shell::Cmd && c.syntax.contains(['\r', '\n']) {
+        Some("Multi-line CMD commands can only be run from the terminal.")
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -159,6 +186,8 @@ impl App {
                 user_aliases: aliases.remove(&c.id).unwrap_or_default(),
                 multi_step: c.source == Source::Custom
                     && catalog::is_multi_step(c.shell, &c.syntax),
+                runnable: run_block_reason(&c).is_none(),
+                run_blocked_reason: run_block_reason(&c).map(String::from),
                 command: c,
             })
             .collect())
@@ -213,6 +242,17 @@ impl App {
                 .map(|(command, score)| SearchResult { command, score })
                 .collect())
         })
+    }
+
+    /// The command to run, if one-click running is allowed. Records the use.
+    pub fn runnable_command(&self, id: &str) -> AppResult<Command> {
+        let command =
+            self.with_store(|store| Ok(Self::find(&self.all_commands(store)?, id)?.clone()))?;
+        if let Some(reason) = run_block_reason(&command) {
+            return Err(AppError::Conflict(reason.into()));
+        }
+        self.record_recent(id)?;
+        Ok(command)
     }
 
     pub fn source_url(&self, id: &str, index: usize) -> AppResult<String> {
@@ -867,6 +907,36 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn one_click_run_is_limited_until_authorization_exists() {
+        let a = app();
+        assert!(a.runnable_command("cmd.ipconfig.all").is_ok());
+        assert!(a.get("cmd.ipconfig.all").unwrap().runnable);
+        // Admin-only but read-only: allowed; Windows itself refuses without rights.
+        assert!(a.runnable_command("cmd.netstat.b").is_ok());
+        for blocked in [
+            "cmd.netsh.winsock-reset",
+            "ps.format-volume",
+            "cmd.del",
+            "cmd.where",
+        ] {
+            let view = a.get(blocked).unwrap();
+            assert!(
+                !view.runnable && view.run_blocked_reason.is_some(),
+                "{blocked}"
+            );
+            assert!(
+                matches!(a.runnable_command(blocked), Err(AppError::Conflict(_))),
+                "{blocked}"
+            );
+        }
+        let custom = a.custom_create(draft("Git branches")).unwrap();
+        assert!(!custom.runnable);
+        assert!(a.runnable_command(&custom.command.id).is_err());
+        // Running counts as a use.
+        assert_eq!(a.recents().unwrap()[0].command.id, "cmd.netstat.b");
     }
 
     #[test]

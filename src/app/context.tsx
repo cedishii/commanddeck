@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { CommandView, Shell } from '../ipc/types';
+import type { PageId } from './pages';
 
 export type SearchMode = 'browse' | 'addToHome';
 
@@ -12,9 +13,14 @@ export interface AppContextValue {
   readonly revision: number;
   readonly invalidate: () => void;
   readonly notify: (message: string, tone?: ToastTone) => void;
+  readonly navigate: (page: PageId) => void;
   readonly openDetails: (id: string) => void;
   readonly openSearch: (mode?: SearchMode) => void;
   readonly openEditor: (target: EditorTarget) => void;
+  /** Puts the command in its shell's command bar for the user to review and send. */
+  readonly openInTerminal: (command: CommandView) => void;
+  /** One-click run (only for commands the backend marks runnable). */
+  readonly runCommand: (command: CommandView) => void;
 }
 
 export const AppContext = createContext<AppContextValue | null>(null);

@@ -35,7 +35,7 @@ D1–D7, D9 and D13 were proposed in Phase 0 and accepted on 2026-10-18 when the
 |---|----------|--------|
 | D1 | Tauri 2 desktop app, React 19 + TypeScript (strict) + Vite frontend | ✅ 2026-10-18 |
 | D2 | Rust backend owns all process creation, PTY, privilege detection, auth, persistence | ✅ 2026-10-18 |
-| D3 | Terminal: xterm.js in the UI, Windows ConPTY in Rust behind a `PtyBackend` trait (start with `portable-pty`, fall back to direct `windows`-crate ConPTY) | ✅ 2026-10-18 |
+| D3 | Terminal: xterm.js in the UI, Windows ConPTY in Rust (implemented directly, see D23) | ✅ 2026-10-18 |
 | D4 | SQLite via `rusqlite` (bundled), accessed **only** from Rust. No `tauri-plugin-sql`, `-shell`, or `-fs` exposed to the webview | ✅ 2026-10-18 |
 | D5 | Built-in catalog = versioned JSON files in `catalog/`, embedded at compile time, schema-validated at load and in tests | ✅ 2026-10-18 |
 | D6 | Structured catalog execution uses argv arrays + absolute executable paths; never string-built shell expressions | ✅ 2026-10-18 |
@@ -52,6 +52,12 @@ D1–D7, D9 and D13 were proposed in Phase 0 and accepted on 2026-10-18 when the
 | D20 | Catalog verification = automated checks against the real Windows install (program/cmdlet/parameter/flag existence) + doc URLs resolving + admin probes of harmless read-only commands | ✅ 2026-10-18 (Phase 2) |
 | D21 | Personal labels on Home are display-only; personal aliases only affect search | ✅ 2026-10-18 (Phase 2) |
 | D22 | First run seeds 8 quick actions (of 10) so adding works immediately | ✅ 2026-10-18 (Phase 2) |
+| D23 | **ConPTY directly via the `windows` crate**, not `portable-pty`: processes are created SUSPENDED, put in a KILL_ON_JOB_CLOSE Job Object, then resumed, so no child can escape cleanup. Also avoids a dependency unreleased since Feb 2025. All `unsafe` is confined to `src-tauri/src/pty/conpty.rs` | ✅ 2026-10-18 (Phase 3) |
+| D24 | One-off Runs also use ConPTY (terminal-correct output, colors, Ctrl+C). Consequence: stdout and stderr arrive merged, like in any console | ✅ 2026-10-18 (Phase 3) |
+| D25 | Until Phase 4: one-click Run only for built-in, L1, placeholder-free commands (`app::run_block_reason`, enforced in the backend). Everything else uses "Open in terminal" | ✅ 2026-10-18 (Phase 3) |
+| D26 | "Open in terminal" fills the command bar and focuses it; it never sends anything to the shell by itself | ✅ 2026-10-18 (Phase 3) |
+| D27 | Terminal keyboard: every key goes to the shell except Ctrl+Shift+K (search), Ctrl+Shift+E (to command bar), Ctrl+Shift+1/2/3 (pages), Ctrl+C with a selection / Ctrl+Shift+C (copy), Ctrl+V / Ctrl+Shift+V (paste). Global shortcuts and dialog key handling ignore events from `[data-terminal]` | ✅ 2026-10-18 (Phase 3) |
+| D28 | All pages stay mounted (hidden when inactive) so sessions survive navigation. A shell session starts the first time its page is shown | ✅ 2026-10-18 (Phase 3) |
 
 ## 4. Open questions (do not decide unilaterally)
 
@@ -85,13 +91,14 @@ commanddeck/
     error.rs           ✓ AppError → { kind, message, fields? }
     catalog/           ✓ mod.rs (types, load, validation, multi-step), search.rs (ranking)
     store/             ✓ SQLite: migrations, settings, Home, favorites, recents, aliases, custom
-    exec/ pty/         Phase 3
+    pty/               ✓ mod.rs (shells, command lines, PtyManager, events), conpty.rs (ConPTY + Job Objects; the only unsafe code)
     security/ platform/  Phase 4
+  src/terminal/        ✓ XtermView (xterm.js), useTerminalSession, TerminalPanel (+ command bar), RunPanel
   src-tauri/capabilities/  ✓ core:default only
 ```
 
-Frontend: React 19, TypeScript strict, Vite, Tailwind CSS v4 over CSS-variable tokens, lucide-react icons. Later: @xterm/xterm + addon-fit.
-Backend now: Rust stable (MSVC), tauri 2, tauri-plugin-opener (Rust-side only), serde/serde_json, rusqlite (bundled SQLite), thiserror. Later: windows crate, portable-pty, argon2.
+Frontend: React 19, TypeScript strict, Vite, Tailwind CSS v4 over CSS-variable tokens, lucide-react icons, @xterm/xterm 6 + addon-fit.
+Backend now: Rust stable (MSVC), tauri 2, tauri-plugin-opener (Rust-side only), serde/serde_json, rusqlite (bundled SQLite), thiserror, windows 0.62 (ConPTY/Job Objects), base64. Later: argon2.
 Versions are pinned in lockfiles; verify before upgrading.
 
 Data lives in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`. **Debug builds only:** set `COMMANDDECK_DATA_DIR` to use a throwaway folder for testing (release builds ignore it).
@@ -111,6 +118,9 @@ Data lives in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`. **Debug 
 - Custom commands' declared risk is informational; future execution must analyze them itself (`source: "custom"`).
 - Documentation links open only via `catalog_open_source(id, index)`. The webview never passes a URL to open.
 - Testing must not touch the owner's real data: use `COMMANDDECK_DATA_DIR` + `WEBVIEW2_USER_DATA_FOLDER` pointed at scratch folders.
+- The webview can start only known shells (`ShellKind` enum) and run only catalog commands **by id**. It never supplies a program path or command text to execute. Command-bar and keystroke input goes into an existing session, the same as typing.
+- Every process runs in its own Job Object, created suspended and assigned before it starts. "End session", "Stop" and app exit kill the whole tree, and only that tree.
+- Rust tests that spawn real processes use `tempfile` working directories and harmless commands only (echo, set, ping 127.0.0.1).
 
 ## 7. Coding conventions
 
@@ -177,19 +187,23 @@ A phase is complete only when its acceptance criteria are **verified** (tests ru
 - v0.2.0 is installed per-user on the owner's PC (`%LOCALAPPDATA%\CommandDeck`), upgraded in place from 0.1.0 with owner approval on 2026-10-18. The owner's real data now lives in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`. Never test against it.
 - Still not implemented: running commands (Run is disabled), terminal sessions, privilege detection, authorization.
 - Local git only, no remote. Commit only with owner approval. Last commit: Phase 2 (`a6c4214`).
-- **Next: Phase 3** (native terminal: PTY spike → ConPTY sessions, xterm.js, one-off structured runner). Start with a short plan and confirm with the owner.
+- **Phase 3 complete and verified 2026-10-18** (ROADMAP.md table, TESTING.md): real cmd.exe / Windows PowerShell sessions over ConPTY with xterm.js, command bar, Open in terminal, one-click Run for L1 built-ins, process-tree cleanup. Version 0.3.0 (built; install needs owner OK).
+- **Next: Phase 4** (privilege detection, Restart as administrator, risk analyzer + structural command-bar checks, prepare/authorize/run grants, Advanced Mode, optional app password). Start with a short plan.
 - Environment (verified 2026-10-18): Windows 11 build 26300 x64, Node 24.20.0, npm 11.19.0, git 2.55, WebView2 155, Windows PowerShell 5.1, **VS 2022 Build Tools 17.14.42** (`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`, VC x64 tools), **Windows SDK 10.0.26100.0**, **rustup 1.29.1 / rustc + cargo 1.99.1 stable-x86_64-pc-windows-msvc** (user-level, `%USERPROFILE%\.cargo\bin` on user PATH; clippy and rustfmt included). Not installed: PowerShell 7 (optional).
 - Terminals opened before the Rust install won't have cargo on PATH. Open a new terminal or VS Code window.
 
 ## 11. Known issues / limitations
 
-- Unverified: MSI install, manual Tab-order pass in the native window by a human, live OS theme switch while running.
+- Unverified: MSI install, manual Tab-order pass in the native window by a human, live OS theme switch while running, PowerShell 7 (`pwsh`) sessions (not installed on the dev PC; detection is tested).
+- Terminals: stdout and stderr are merged (ConPTY). ConPTY's win32-input-mode isn't used (xterm.js speaks plain VT), so a few rare key combinations may differ from Windows Terminal. One session per shell page (no tabs yet). xterm's screen-reader mode is off (Phase 5 setting).
+- The command bar has **no** high-impact detection yet (Phase 4). Until then it's exactly equivalent to typing.
+- Programs choose ANSI colors blindly. The terminal enforces minimumContrastRatio 4.5 so text stays readable in both themes, which slightly alters some program colors.
+- e2e test gotcha: xterm.js has its own hidden `<textarea>`. Select the command bar by its label, not `textarea`.
 - Search has no typo tolerance (e.g. "ipconfg" finds nothing). Add only if relevance tests show a need.
 - Multi-step detection for custom commands is heuristic and informational (labels, never blocks).
 - Two CommandDeck instances with different WebView2 arguments can't share a profile folder (WebView2 0x8007139F). Isolate test instances with `WEBVIEW2_USER_DATA_FOLDER`.
 - Programmatic `MoveWindow`/`SetWindowPos` bypasses min size (normal Windows behavior). Verify min size via `WM_GETMINMAXINFO`, not by moving the window.
 
-- `portable-pty` latest release is 0.9.0 (Feb 2025); maintenance risk — mitigated by the `PtyBackend` trait.
 - An unelevated process cannot host an elevated ConPTY child directly; therefore elevated terminals require restarting the whole app as administrator (D8). Restarting ends open terminal sessions.
 - While elevated, Windows UIPI blocks drag-and-drop from a non-elevated Explorer into the app.
 - Raw terminal input cannot be reliably risk-analyzed (history recall, tab completion, PSReadLine, scripts).

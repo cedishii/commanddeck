@@ -7,7 +7,16 @@
  * (shapes and error kinds), not its full logic. The real rules are tested in Rust.
  */
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks';
-import type { Command, CommandView, CustomDraft, HomeView, Settings, Shell } from '../ipc/types';
+import type { Command, CommandView, CustomDraft, HomeView, PtyEvent, Settings, Shell } from '../ipc/types';
+
+interface FakeSession {
+  readonly id: number;
+  readonly kind: 'session' | 'run';
+  readonly target: string;
+  readonly emit: (event: PtyEvent) => void;
+  written: string;
+  open: boolean;
+}
 
 type Payload = Record<string, unknown>;
 type ErrorPayload = { kind: string; message: string; fields?: { field: string; message: string }[] };
@@ -65,6 +74,8 @@ export interface FakeBackend {
   readonly calls: { cmd: string; args: Payload }[];
   /** Makes the next call to `cmd` fail with the given error payload. */
   failNext: (cmd: string, error: ErrorPayload) => void;
+  /** Makes every call to cmd fail until the test ends. */
+  failAlways: (cmd: string, error: ErrorPayload) => void;
   readonly state: {
     commands: Command[];
     home: { id: string; label: string | null; note: string | null }[];
@@ -74,6 +85,10 @@ export interface FakeBackend {
     aliases: Map<string, string[]>;
   };
   callsTo: (cmd: string) => Payload[];
+  readonly sessions: FakeSession[];
+  /** Sends terminal output (UTF-8 text) to a session's channel. */
+  output: (sessionId: number, text: string) => void;
+  exit: (sessionId: number, code: number) => void;
 }
 
 function multiStep(shell: Shell, syntax: string): boolean {
@@ -91,7 +106,23 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
   };
   const calls: FakeBackend['calls'] = [];
   const failures = new Map<string, ErrorPayload>();
+  const sticky = new Map<string, ErrorPayload>();
   let nextCustom = 1;
+  const sessions: FakeSession[] = [];
+  // Mirrors app.rs run_block_reason.
+  const runBlock = (c: Command): string | null =>
+    c.source === 'custom' ? 'Custom commands open in the terminal.' : c.risk !== 'L1' ? 'This changes your system.' : c.placeholders.length > 0 ? 'This needs values filled in.' : null;
+  const openSession = (kind: FakeSession['kind'], target: string, channel: unknown) => {
+    const ch = channel as { onmessage: (e: PtyEvent) => void };
+    const s: FakeSession = { id: sessions.length + 1, kind, target, emit: (e) => { ch.onmessage(e); }, written: '', open: true };
+    sessions.push(s);
+    return { sessionId: s.id, pid: 1000 + s.id, program: target };
+  };
+  const session = (id: unknown) => {
+    const s = sessions.find((x) => x.id === id && x.open);
+    if (!s) throw { kind: 'notFound', message: 'That terminal session has ended.' };
+    return s;
+  };
 
   const find = (id: string): Command => {
     const c = state.commands.find((x) => x.id === id);
@@ -104,6 +135,8 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     onHome: state.home.some((h) => h.id === c.id),
     userAliases: state.aliases.get(c.id) ?? [],
     multiStep: c.source === 'custom' && multiStep(c.shell, c.syntax),
+    runnable: runBlock(c) === null,
+    runBlockedReason: runBlock(c),
   });
   const home = (): HomeView => ({
     limit: state.settings.quickActionLimit,
@@ -119,6 +152,35 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
   };
 
   const handlers: Record<string, (a: Payload) => unknown> = {
+    shells_list: () => [
+      { id: 'cmd', label: 'Command Prompt', path: 'C:\\Windows\\System32\\cmd.exe', available: true },
+      { id: 'powershell', label: 'Windows PowerShell', path: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', available: true },
+      { id: 'pwsh', label: 'PowerShell 7', path: null, available: false },
+    ],
+    pty_open: (a) => openSession('session', String(a.shell), a.onEvent),
+    run_start: (a) => {
+      const c = find(a.id as string);
+      const reason = runBlock(c);
+      if (reason) throw { kind: 'conflict', message: reason };
+      state.recents = [c.id, ...state.recents.filter((r) => r !== c.id)];
+      return openSession('run', c.id, a.onEvent);
+    },
+    pty_write: (a) => {
+      session(a.sessionId).written += String(a.data);
+      return null;
+    },
+    pty_resize: (a) => {
+      session(a.sessionId);
+      return null;
+    },
+    pty_close: (a) => {
+      const s = sessions.find((x) => x.id === a.sessionId);
+      if (s?.open) {
+        s.open = false;
+        s.emit({ kind: 'exit', code: 1 });
+      }
+      return null;
+    },
     app_startup: () => ({ notice: options.notice ?? null, builtinCount: state.commands.filter((c) => c.source === 'builtin').length }),
     catalog_list: (a) => state.commands.filter((c) => !a.shell || c.shell === a.shell).map(view),
     catalog_get: (a) => view(find(a.id as string)),
@@ -236,7 +298,7 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
   mockIPC((cmd, payload) => {
     const args = (payload ?? {}) as Payload;
     calls.push({ cmd, args });
-    const failure = failures.get(cmd);
+    const failure = failures.get(cmd) ?? sticky.get(cmd);
     if (failure) {
       failures.delete(cmd);
       return Promise.reject(failure);
@@ -254,7 +316,20 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
     calls,
     state,
     failNext: (cmd, error) => { failures.set(cmd, error); },
+    failAlways: (cmd, error) => { sticky.set(cmd, error); },
     callsTo: (cmd) => calls.filter((c) => c.cmd === cmd).map((c) => c.args),
+    sessions,
+    output: (id, text) => {
+      const bytes = new TextEncoder().encode(text);
+      let binary = '';
+      bytes.forEach((b) => { binary += String.fromCharCode(b); });
+      session(id).emit({ kind: 'output', data: btoa(binary) });
+    },
+    exit: (id, code) => {
+      const s = session(id);
+      s.open = false;
+      s.emit({ kind: 'exit', code });
+    },
   };
 }
 

@@ -1,4 +1,4 @@
-import { ExternalLink, House, Pencil, Star, Trash2, X } from 'lucide-react';
+import { ExternalLink, House, Pencil, Play, SquareTerminal, Star, Trash2, X } from 'lucide-react';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { useAppContext } from '../app/context';
 import { categoryLabel } from '../domain/categories';
@@ -80,7 +80,7 @@ export function docLabel(url: string): string {
 }
 
 function Content({ entry, onClose }: { entry: CommandEntry; onClose: () => void }) {
-  const { openEditor, notify } = useAppContext();
+  const { openEditor, notify, openInTerminal, runCommand } = useAppContext();
   const actions = useCommandActions();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const d = entry.details;
@@ -89,6 +89,16 @@ function Content({ entry, onClose }: { entry: CommandEntry; onClose: () => void 
   return (
     <>
       <div className="flex flex-wrap gap-2">
+        {entry.runnable ? (
+          <button type="button" className={buttonStyles.primary} onClick={() => { runCommand(entry); }}>
+            <Play aria-hidden size={14} />
+            Run
+          </button>
+        ) : null}
+        <button type="button" className={entry.runnable ? buttonStyles.secondary : buttonStyles.primary} onClick={() => { openInTerminal(entry); }}>
+          <SquareTerminal aria-hidden size={14} />
+          Open in terminal
+        </button>
         <button type="button" className={buttonStyles.secondary} aria-pressed={entry.favorite} onClick={() => { void actions.toggleFavorite(entry); }}>
           <Star aria-hidden size={14} className={entry.favorite ? 'fill-current text-risk2-fg' : undefined} />
           {entry.favorite ? 'Favorited' : 'Favorite'}
@@ -114,6 +124,8 @@ function Content({ entry, onClose }: { entry: CommandEntry; onClose: () => void 
           </>
         ) : null}
       </div>
+
+      {!entry.runnable && entry.runBlockedReason ? <p className="text-xs text-muted">{entry.runBlockedReason}</p> : null}
 
       <p className="text-sm">{entry.summary}</p>
 

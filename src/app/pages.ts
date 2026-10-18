@@ -14,4 +14,10 @@ export const PAGES: Record<PageId, PageMeta> = {
   settings: { id: 'settings', label: 'Settings', shortcutKey: ',' },
 };
 
-export const PAGE_TITLE_ID = 'page-title';
+/**
+ * All pages stay mounted (terminal sessions and scroll positions survive
+ * navigation). Inactive ones are `hidden`, so this finds the visible title.
+ */
+export function focusPageTitle(): void {
+  document.querySelector<HTMLElement>('[data-page]:not([hidden]) h1')?.focus();
+}

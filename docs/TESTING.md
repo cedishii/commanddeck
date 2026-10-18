@@ -81,6 +81,26 @@ Registry versions checked 2026-10-18: tauri 2.12.4, @tauri-apps/cli 2.12.3, @xte
 
 How the real-app e2e works (repeatable): set `COMMANDDECK_DATA_DIR` and `WEBVIEW2_USER_DATA_FOLDER` to scratch folders and `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223`, then run `npm run tauri dev`. Then connect to `http://127.0.0.1:9223/json` and evaluate scripts / send `Input.dispatchMouseEvent` and `Input.dispatchKeyEvent`. The driver used was a small Node script (Node 24 has built-in WebSocket). It lived in the session scratchpad, so moving it into `tests/e2e/` is a Phase 3 task.
 
+| 2026-10-18 | 3 | Rust ConPTY tests with **real processes** (temp working dirs, harmless commands): cmd output + exit 3, PowerShell Unicode, session state, `set /p` input, resize, kill → job empty, failed launch, manager limits | 12 pass; stable across 5 parallel runs + 1 serial run |
+| 2026-10-18 | 3 | `cargo test` total, clippy `-D warnings`, fmt | **64 pass** (1 ignored dev aid); clean |
+| 2026-10-18 | 3 | `npm test`: 12 files incl. new Terminal.test (session lifecycle, verbatim keystrokes, command-bar bytes, exit/restart/end, navigation persistence, launch failure, terminal shortcut isolation, collapse/maximize, Open in terminal never sends, Run/Stop/refusal) | **122/122 pass** |
+| 2026-10-18 | 3 | Real-app e2e (isolated data + WebView2 profile, trusted CDP keyboard/mouse) | cmd banner + prompt; typed `echo`; Tab completion `dir Doc` → `dir Documents`; ↑ history; Esc clears (also right after Tab and directly before ↑); Ctrl+C stops `ping -t`; command bar runs; PowerShell 5, Unicode `π ✓ é`, `cd`/variables persist; Run `ipconfig /all` exit 0; Open in terminal fills and focuses the command bar without running |
+| 2026-10-18 | 3 | OS-level cleanup checks via Win32_Process | End session: cmd + running ping child both gone. App close with busy shells: 5 processes (2 shells, 2 conhosts, ping) → **0 survivors** |
+| 2026-10-18 | 3 | Light-theme readability (screenshot) | Found PSReadLine text invisible (ANSI white on white); fixed with `minimumContrastRatio: 4.5`; re-verified readable |
+| 2026-10-18 | 3 | `npm run tauri build` (0.3.0) | Pass: setup.exe 3.02 MB, MSI 4.32 MB |
+| 2026-10-18 | 3 | Release exe under the production CSP (`http://tauri.localhost`), isolated WebView2 profile, session-only so no DB writes | CMD prompt streamed over the IPC channel; typed `echo` round-tripped; owner's database not modified |
+| — | 3 | **Not run:** PowerShell 7 session (not installed); MSI; human Tab-order pass | Pending |
+
+### Bugs found during Phase 3 verification (all fixed)
+
+1. Rust closures captured only the raw `HANDLE` field (not the `Send` wrapper) under Rust 2021 precise capture → compile error. Fixed by moving the whole wrapper into the thread.
+2. Dialog focus trap and global shortcuts would have stolen Tab / Ctrl+K / Ctrl+1 from the shell. Both now ignore events from inside `[data-terminal]`. Covered by tests.
+3. Light theme made some PSReadLine syntax colors invisible. Contrast floor added.
+4. Duplicate `id="page-title"` once all pages stayed mounted; replaced with `focusPageTitle()` on the visible page.
+5. A one-shot fake-backend failure was consumed by Settings (child effects run before the parent's). Added `failAlways` for startup-failure tests.
+
+Investigated and not a bug: a line reading `dir Documentsecho hello…` was left over from an aborted script run, and history recalled it correctly.
+
 ### Bugs found during Phase 2 verification (all fixed)
 
 1. Search: "ip" ranked execution-policy entries because phrase bonuses used substring matching ("scr**ip**t"). Now whole-word matching. Regression test `short_queries_match_whole_words_only_regression`.

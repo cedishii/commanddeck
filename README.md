@@ -2,7 +2,7 @@
 
 A Windows desktop controller for CMD and PowerShell.
 
-> **Status:** 0.2.0 (Phase 2). The command library, search, Home quick actions, favorites and custom commands work and are saved locally. **Running commands and live terminal sessions come in Phase 3.** Until then, copy a command and paste it into your own terminal.
+> **Status:** 0.3.0 (Phase 3). The command library, search, Home quick actions, favorites and custom commands work and are saved locally. The CMD and PowerShell pages host real shell sessions. Routine commands run with one click; others open in the terminal for you to review and run. Confirmations, administrator mode and the safety checks come in Phase 4.
 
 CommandDeck makes the Windows command line easier to use without replacing it:
 
@@ -32,7 +32,9 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 npm run tauri build    # release build + NSIS and MSI installers in src-tauri/target/release/bundle/
 ```
 
-Keyboard: `Ctrl+K` search, `Ctrl+1` Home, `Ctrl+2` CMD, `Ctrl+3` PowerShell, `Ctrl+,` Settings, `Esc` closes panels and dialogs. In search: `Enter` details, `Ctrl+Enter` copy, `Alt+Enter` add to Home.
+In a terminal, keys go to the shell. App shortcuts there use Ctrl+Shift: `Ctrl+Shift+K` search, `Ctrl+Shift+E` command bar, `Ctrl+Shift+1/2/3` pages. Ctrl+C copies when text is selected, otherwise it interrupts.
+
+Keyboard elsewhere: `Ctrl+K` search, `Ctrl+1` Home, `Ctrl+2` CMD, `Ctrl+3` PowerShell, `Ctrl+,` Settings, `Esc` closes panels and dialogs. In search: `Enter` details, `Ctrl+Enter` copy, `Alt+Enter` add to Home.
 
 After changing `catalog/*.json`, run `powershell -NoProfile -File scripts/verify-catalog.ps1`. It checks every entry against this Windows installation and the cited documentation.
 

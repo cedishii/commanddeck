@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from 'react';
+import { focusPageTitle } from '../app/pages';
 
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -28,13 +29,15 @@ export function useDialog(
     target?.focus();
     return () => {
       if (previous?.isConnected) previous.focus();
-      else document.getElementById('page-title')?.focus();
+      else focusPageTitle();
     };
     // Mount/unmount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (event) => {
+    // Keys typed in a terminal belong to the shell (Tab completion, Esc in programs).
+    if (event.target instanceof Element && event.target.closest('[data-terminal]')) return;
     if (event.key === 'Escape') {
       event.stopPropagation();
       event.preventDefault();

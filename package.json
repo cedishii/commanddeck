@@ -1,7 +1,7 @@
 {
   "name": "commanddeck",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A Windows desktop controller for CMD and PowerShell.",
   "author": "Cedrick Kaneko",
   "type": "module",
@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "lucide-react": "^1.59.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

@@ -1,6 +1,6 @@
 [package]
 name = "commanddeck"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Windows desktop controller for CMD and PowerShell."
 authors = ["Cedrick Kaneko"]
 license = ""
@@ -23,6 +23,19 @@ tauri = { version = "2.12.4", features = [] }
 tauri-plugin-opener = "2.7"
 rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = "2.0"
+base64 = "0.23"
+# Native Windows integration (ConPTY terminals, Job Objects). Unsafe use is confined to src/pty/conpty.rs.
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tempfile = "3.27"

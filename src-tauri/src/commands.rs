@@ -1,8 +1,13 @@
 //! Tauri command handlers: deserialize, delegate to `App`, serialize.
 //! No logic lives here. Async so storage work never runs on the UI thread.
 
+use std::sync::Arc;
+
+use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
+
+use crate::pty::{self, EventSink, PtyEvent, PtyManager, SessionInfo, ShellInfo, ShellKind};
 
 use crate::app::{App, CommandView, HomeView, ImportReport, SearchResult, StartupInfo};
 use crate::catalog::Shell;
@@ -11,14 +16,74 @@ use crate::store::{CustomDraft, Settings, SettingsPatch};
 
 /// Managed state. If startup failed, the window still opens and every command
 /// reports the startup error, so the user sees why instead of a vanished app.
-pub struct Backend(pub Result<App, String>);
+pub struct Backend {
+    pub app: Result<App, String>,
+    pub pty: PtyManager,
+    pub home_dir: Option<std::path::PathBuf>,
+}
 
 impl Backend {
     fn app(&self) -> AppResult<&App> {
-        self.0
+        self.app
             .as_ref()
             .map_err(|e| AppError::Internal(format!("CommandDeck could not start: {e}")))
     }
+}
+
+fn channel_sink(channel: Channel<PtyEvent>) -> EventSink {
+    Arc::new(move |event| {
+        // A closed webview just drops events; the session keeps running until closed.
+        let _ = channel.send(PtyEvent::from(event));
+    })
+}
+
+#[tauri::command]
+pub async fn shells_list() -> AppResult<Vec<ShellInfo>> {
+    Ok(pty::shells())
+}
+
+/// Starts an interactive shell. Only known shells can be started.
+#[tauri::command]
+pub async fn pty_open(
+    b: B<'_>,
+    shell: ShellKind,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<PtyEvent>,
+) -> AppResult<SessionInfo> {
+    let spec = pty::interactive_spec(shell, b.home_dir.clone(), cols, rows)?;
+    b.pty.open(&spec, channel_sink(on_event))
+}
+
+/// One-off run of a catalog command by id. The frontend never supplies command text.
+#[tauri::command]
+pub async fn run_start(
+    b: B<'_>,
+    id: String,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<PtyEvent>,
+) -> AppResult<SessionInfo> {
+    let command = b.app()?.runnable_command(&id)?;
+    let spec = pty::run_spec(&command, b.home_dir.clone(), cols, rows)?;
+    b.pty.open(&spec, channel_sink(on_event))
+}
+
+/// Keyboard input for a session or run, forwarded exactly as given.
+#[tauri::command]
+pub async fn pty_write(b: B<'_>, session_id: u64, data: String) -> AppResult<()> {
+    b.pty.write(session_id, &data)
+}
+
+#[tauri::command]
+pub async fn pty_resize(b: B<'_>, session_id: u64, cols: u16, rows: u16) -> AppResult<()> {
+    b.pty.resize(session_id, cols, rows)
+}
+
+/// Ends a session or run and kills everything it started.
+#[tauri::command]
+pub async fn pty_close(b: B<'_>, session_id: u64) -> AppResult<()> {
+    b.pty.close(session_id)
 }
 
 type B<'a> = State<'a, Backend>;

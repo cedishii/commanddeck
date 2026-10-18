@@ -137,6 +137,18 @@ Free-form custom scripts can't be fully analyzed. They are labeled "script / mul
 - **Test isolation.** `COMMANDDECK_DATA_DIR` exists only in debug builds (`cfg!(debug_assertions)`), so a release install can't be redirected by an environment variable.
 - **History** stores only command ids for copies (no output, no free text), capped at 20, with a "Clear recent commands" control.
 
+## 10b. Implemented in Phase 3 (verified)
+
+- **What the webview can start**: a known shell (`cmd`, `powershell`, `pwsh`, an enum) or a catalog command **by id**. It can't name a program or pass command text to execute. Text typed or sent from the command bar goes into an already-running shell, which is exactly what typing does.
+- **One-click Run policy** (backend, `app::run_block_reason`): only built-in, L1 (routine), placeholder-free commands. L2/L3, custom, placeholder and multi-line CMD commands are refused by the backend with an explanation; the UI offers "Open in terminal" instead. Admin-only read-only commands may run, and Windows refuses them for a standard user.
+- **Open in terminal never executes.** It only fills the command bar; the user presses Enter.
+- **Terminal input is not screened, filtered or rewritten** (§6.1). The command bar sends the text with CR line endings, exactly as typing. Structural checks are Phase 4.
+- **Process containment**: every process is created suspended and assigned to its own Job Object (KILL_ON_JOB_CLOSE) before its first instruction. Verified: End session killed the shell and its running `ping`; closing the app killed 2 shells, their console hosts and a running child (0 survivors).
+- **No elevation**: processes inherit CommandDeck's token. With a standard-user app, shells are standard-user.
+- **Std handle isolation**: children get no inherited handles (`bInheritHandles = FALSE`, invalid std handles); they only see the pseudoconsole.
+- **Resource limits**: 16 concurrent processes, 1 MB per input write, bounded terminal sizes.
+- Output isn't stored anywhere. Only command ids of Runs go into recent history.
+
 ## 11. Known limitations
 
 - Command-bar analysis is structural but incomplete: runtime variables, encoded commands, `Invoke-Expression`, scripts and anything typed in the terminal pane are not covered. It exists to catch mistakes, not adversaries.

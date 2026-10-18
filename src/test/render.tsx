@@ -21,9 +21,12 @@ export function renderWithContext(ui: ReactElement, overrides: Partial<AppContex
     revision: 0,
     invalidate: vi.fn(),
     notify: vi.fn(),
+    navigate: vi.fn(),
     openDetails: vi.fn(),
     openSearch: vi.fn(),
     openEditor: vi.fn(),
+    openInTerminal: vi.fn(),
+    runCommand: vi.fn(),
     ...overrides,
   };
   return {

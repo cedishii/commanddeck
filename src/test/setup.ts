@@ -3,6 +3,8 @@ import { cleanup } from '@testing-library/react';
 import { clearMocks } from '@tauri-apps/api/mocks';
 import { afterEach, vi } from 'vitest';
 
+vi.mock('../terminal/XtermView', () => import('./xtermMock'));
+
 /** jsdom has no matchMedia. Default to a light system theme; tests can override `matches`. */
 export const mediaState = { dark: false };
 

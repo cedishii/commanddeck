@@ -101,7 +101,7 @@ describe('App startup', () => {
 
   it('shows a clear error screen when the backend could not start', async () => {
     const backend = installFakeBackend();
-    backend.failNext('app_startup', { kind: 'internal', message: 'CommandDeck could not start: newer schema' });
+    backend.failAlways('app_startup', { kind: 'internal', message: 'CommandDeck could not start: newer schema' });
     renderApp();
     expect(await screen.findByRole('heading', { name: 'CommandDeck couldn’t start' })).toBeInTheDocument();
     expect(screen.getByText(/newer schema/)).toBeInTheDocument();

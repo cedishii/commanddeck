@@ -9,13 +9,17 @@ import { useAsync } from '../hooks/useAsync';
 import { useGlobalShortcuts, type ShortcutMap } from '../hooks/useGlobalShortcuts';
 import { api } from '../ipc/api';
 import { BackendError } from '../ipc/client';
+import type { CommandView, Shell } from '../ipc/types';
 import { HomePage } from '../pages/HomePage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { ShellPage } from '../pages/ShellPage';
+import { RunPanel } from '../terminal/RunPanel';
 import { AppContext, type AppContextValue, type EditorTarget, type SearchMode, type ToastTone } from './context';
-import { PAGES, PAGE_TITLE_ID, type PageId } from './pages';
+import { PAGES, focusPageTitle, type PageId } from './pages';
 
 const TOAST_MS = 4000;
+
+type Pending = Record<Shell, { readonly text: string; readonly nonce: number } | null>;
 
 function StartupFailure({ message }: { message: string }) {
   return (
@@ -40,6 +44,8 @@ export function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [search, setSearch] = useState<SearchMode | null>(null);
   const [editor, setEditor] = useState<EditorTarget | null>(null);
+  const [running, setRunning] = useState<CommandView | null>(null);
+  const [pending, setPending] = useState<Pending>({ cmd: null, powershell: null });
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   const toastId = useRef(0);
   const { state: startup } = useAsync(api.startup);
@@ -56,17 +62,32 @@ export function App() {
       revision,
       invalidate: () => { setRevision((r) => r + 1); },
       notify,
+      navigate: (p) => { setPage(p); },
       openDetails: (id) => { setDetailId(id); },
       openSearch: (mode = 'browse') => { setSearch(mode); },
       openEditor: (target) => {
         setDetailId(null);
         setEditor(target);
       },
+      openInTerminal: (command) => {
+        setDetailId(null);
+        setSearch(null);
+        setPending((p) => ({ ...p, [command.shell]: { text: command.syntax, nonce: Date.now() } }));
+        setPage(command.shell);
+      },
+      runCommand: (command) => {
+        setDetailId(null);
+        setSearch(null);
+        setRunning(command);
+      },
     }),
     [revision, notify],
   );
 
-  const overlayOpen = detailId !== null || search !== null || editor !== null;
+  const consumeCmd = useCallback(() => { setPending((p) => ({ ...p, cmd: null })); }, []);
+  const consumePs = useCallback(() => { setPending((p) => ({ ...p, powershell: null })); }, []);
+
+  const overlayOpen = detailId !== null || search !== null || editor !== null || running !== null;
 
   const shortcuts = useMemo<ShortcutMap>(() => {
     if (overlayOpen) return {};
@@ -81,7 +102,7 @@ export function App() {
   useEffect(() => {
     if (previousPage.current === page) return;
     previousPage.current = page;
-    document.getElementById(PAGE_TITLE_ID)?.focus();
+    focusPageTitle();
   }, [page]);
 
   const fatal = startup.status === 'error' && startup.error instanceof BackendError && startup.error.kind !== 'unavailable' ? startup.error : null;
@@ -100,18 +121,33 @@ export function App() {
             </button>
           </div>
         ) : null}
-        <main className="min-h-0 flex-1 overflow-y-auto" aria-label={PAGES[page].label}>
-          {fatal ? <StartupFailure message={fatal.message} /> : null}
-          {!fatal && page === 'home' ? <HomePage /> : null}
-          {!fatal && page === 'cmd' ? <ShellPage key="cmd" shell="cmd" /> : null}
-          {!fatal && page === 'powershell' ? <ShellPage key="powershell" shell="powershell" /> : null}
-          {!fatal && page === 'settings' ? <SettingsPage /> : null}
+        <main className="min-h-0 flex-1" aria-label={PAGES[page].label}>
+          {fatal ? (
+            <StartupFailure message={fatal.message} />
+          ) : (
+            <>
+              {/* Pages stay mounted so terminal sessions and scroll positions survive navigation. */}
+              <section data-page="home" hidden={page !== 'home'} className="h-full overflow-y-auto">
+                <HomePage />
+              </section>
+              <section data-page="cmd" hidden={page !== 'cmd'} className="h-full">
+                <ShellPage shell="cmd" active={page === 'cmd'} pending={pending.cmd} onPendingConsumed={consumeCmd} />
+              </section>
+              <section data-page="powershell" hidden={page !== 'powershell'} className="h-full">
+                <ShellPage shell="powershell" active={page === 'powershell'} pending={pending.powershell} onPendingConsumed={consumePs} />
+              </section>
+              <section data-page="settings" hidden={page !== 'settings'} className="h-full overflow-y-auto">
+                <SettingsPage />
+              </section>
+            </>
+          )}
         </main>
       </div>
 
       {search ? <SearchPalette mode={search} onClose={() => { setSearch(null); }} /> : null}
       {detailId ? <DetailPanel key={detailId} id={detailId} onClose={() => { setDetailId(null); }} /> : null}
       {editor ? <CustomCommandEditor target={editor} onClose={() => { setEditor(null); }} /> : null}
+      {running ? <RunPanel key={running.id} command={running} onClose={() => { setRunning(null); }} /> : null}
       <Toasts toasts={toasts} onDismiss={(id) => { setToasts((t) => t.filter((x) => x.id !== id)); }} />
     </AppContext.Provider>
   );

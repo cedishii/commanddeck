@@ -16,7 +16,7 @@ describe('ShellPage', () => {
     const { list } = await goTo('2', 'CMD commands');
     expect(within(list).getByText('ipconfig /all')).toBeInTheDocument();
     expect(within(list).queryByText('Get-Process')).not.toBeInTheDocument();
-    expect(backend.callsTo('catalog_list').at(-1)).toEqual({ shell: 'cmd' });
+    expect(backend.callsTo('catalog_list')).toContainEqual({ shell: 'cmd' });
   });
 
   it('lists only PowerShell commands on the PowerShell page', async () => {
@@ -63,9 +63,4 @@ describe('ShellPage', () => {
     expect(within(categories).getByRole('button', { name: /^Favorites/ })).toHaveTextContent('1');
   });
 
-  it('states that the live session is not available yet', async () => {
-    installFakeBackend();
-    await goTo('3', 'PowerShell commands');
-    expect(screen.getByRole('region', { name: 'PowerShell session' })).toHaveTextContent('Not available yet');
-  });
 });

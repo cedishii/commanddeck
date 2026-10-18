@@ -4,6 +4,7 @@ pub mod app;
 pub mod catalog;
 mod commands;
 pub mod error;
+pub mod pty;
 pub mod store;
 
 use tauri::Manager;
@@ -44,7 +45,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let state = commands::Backend(init_app(app.handle()));
+            let state = commands::Backend {
+                app: init_app(app.handle()),
+                pty: pty::PtyManager::default(),
+                home_dir: app.path().home_dir().ok(),
+            };
             app.manage(state);
             Ok(())
         })
@@ -72,6 +77,12 @@ pub fn run() {
             commands::custom_delete,
             commands::custom_export,
             commands::custom_import,
+            commands::shells_list,
+            commands::pty_open,
+            commands::run_start,
+            commands::pty_write,
+            commands::pty_resize,
+            commands::pty_close,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the CommandDeck window");
