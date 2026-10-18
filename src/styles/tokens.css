@@ -1,0 +1,71 @@
+/*
+ * Design tokens. Single source of truth for color, type and spacing values.
+ * Components use them through the Tailwind theme in global.css.
+ * Contrast pairs are checked by src/styles/tokens.test.ts. Keep that test
+ * passing when changing any color here.
+ */
+
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --cd-bg: #f4f5f8;
+  --cd-surface: #ffffff;
+  --cd-surface-2: #eceff4;
+  --cd-border: #d6dbe4;
+  --cd-fg: #141821;
+  --cd-fg-muted: #4a5163;
+
+  --cd-accent: #2550d9;
+  --cd-accent-fg: #ffffff;
+  --cd-accent-soft: #e6ecfd;
+  --cd-focus: #2550d9;
+
+  --cd-code-bg: #eceff4;
+  --cd-code-fg: #141821;
+
+  --cd-risk1-bg: #e4f4ea;
+  --cd-risk1-fg: #1b6537;
+  --cd-risk2-bg: #fcf0db;
+  --cd-risk2-fg: #7f4b00;
+  --cd-risk3-bg: #fce4e4;
+  --cd-risk3-fg: #9b1c27;
+  --cd-admin-bg: #ebe7fc;
+  --cd-admin-fg: #4a2fb3;
+
+  --cd-danger-fg: #9b1c27;
+  --cd-overlay: rgb(15 18 28 / 0.35);
+  --cd-shadow: 0 8px 28px rgb(15 18 28 / 0.14);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --cd-bg: #0b0e17;
+  --cd-surface: #121725;
+  --cd-surface-2: #1a2032;
+  --cd-border: #2a3248;
+  --cd-fg: #e8ebf3;
+  --cd-fg-muted: #a0a8bc;
+
+  --cd-accent: #6b8fff;
+  --cd-accent-fg: #0b0e17;
+  --cd-accent-soft: #1c2647;
+  --cd-focus: #8aa6ff;
+
+  --cd-code-bg: #1a2032;
+  --cd-code-fg: #e8ebf3;
+
+  --cd-risk1-bg: #10281b;
+  --cd-risk1-fg: #73e3a3;
+  --cd-risk2-bg: #2d220f;
+  --cd-risk2-fg: #f6be5c;
+  --cd-risk3-bg: #351419;
+  --cd-risk3-fg: #ff9099;
+  --cd-admin-bg: #221d45;
+  --cd-admin-fg: #bcaeff;
+
+  --cd-danger-fg: #ff9099;
+  --cd-overlay: rgb(0 0 0 / 0.5);
+  --cd-shadow: 0 8px 28px rgb(0 0 0 / 0.45);
+}

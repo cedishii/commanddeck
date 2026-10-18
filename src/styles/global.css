@@ -1,0 +1,69 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+@theme inline {
+  --color-bg: var(--cd-bg);
+  --color-surface: var(--cd-surface);
+  --color-surface-2: var(--cd-surface-2);
+  --color-border: var(--cd-border);
+  --color-fg: var(--cd-fg);
+  --color-muted: var(--cd-fg-muted);
+  --color-accent: var(--cd-accent);
+  --color-accent-fg: var(--cd-accent-fg);
+  --color-accent-soft: var(--cd-accent-soft);
+  --color-code-bg: var(--cd-code-bg);
+  --color-code-fg: var(--cd-code-fg);
+  --color-risk1-bg: var(--cd-risk1-bg);
+  --color-risk1-fg: var(--cd-risk1-fg);
+  --color-risk2-bg: var(--cd-risk2-bg);
+  --color-risk2-fg: var(--cd-risk2-fg);
+  --color-risk3-bg: var(--cd-risk3-bg);
+  --color-risk3-fg: var(--cd-risk3-fg);
+  --color-admin-bg: var(--cd-admin-bg);
+  --color-admin-fg: var(--cd-admin-fg);
+  --color-danger: var(--cd-danger-fg);
+
+  /* Windows system fonts only: the app works offline and loads no web fonts. */
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
+}
+
+/* Base styles live in the base layer so Tailwind utilities can override them. */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* Desktop app shell: only inner regions scroll, never the document. */
+  html {
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    background: var(--cd-bg);
+    color: var(--cd-fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--cd-focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
