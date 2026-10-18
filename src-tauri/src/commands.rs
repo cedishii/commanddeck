@@ -4,12 +4,14 @@
 use std::sync::Arc;
 
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::pty::{self, EventSink, PtyEvent, PtyManager, SessionInfo, ShellInfo, ShellKind};
 
-use crate::app::{App, CommandView, HomeView, ImportReport, SearchResult, StartupInfo};
+use crate::app::{
+    App, CommandView, HistoryEntry, HomeView, ImportReport, SearchResult, StartupInfo,
+};
 use crate::catalog::Shell;
 use crate::error::{AppError, AppResult};
 use crate::store::{CustomDraft, Settings, SettingsPatch};
@@ -56,8 +58,10 @@ pub async fn pty_open(
 }
 
 /// One-off run of a catalog command by id. The frontend never supplies command text.
+/// When the run ends, its metadata (not output) is added to run history.
 #[tauri::command]
 pub async fn run_start(
+    handle: AppHandle,
     b: B<'_>,
     id: String,
     cols: u16,
@@ -66,7 +70,28 @@ pub async fn run_start(
 ) -> AppResult<SessionInfo> {
     let command = b.app()?.runnable_command(&id)?;
     let spec = pty::run_spec(&command, b.home_dir.clone(), cols, rows)?;
-    b.pty.open(&spec, channel_sink(on_event))
+    let started_at = crate::store::now_millis();
+    let forward = channel_sink(on_event);
+    let sink: EventSink = Arc::new(move |event| {
+        if let pty::ProcessEvent::Exit(code) = &event {
+            let duration = crate::store::now_millis() - started_at;
+            if let Ok(app) = handle.state::<Backend>().app() {
+                let _ = app.record_run(&id, started_at, duration, Some(i64::from(*code)));
+            }
+        }
+        forward(event);
+    });
+    b.pty.open(&spec, sink)
+}
+
+#[tauri::command]
+pub async fn history_get(b: B<'_>, limit: Option<i64>) -> AppResult<Vec<HistoryEntry>> {
+    b.app()?.history(limit.unwrap_or(50))
+}
+
+#[tauri::command]
+pub async fn history_clear(b: B<'_>) -> AppResult<()> {
+    b.app()?.clear_history()
 }
 
 /// Keyboard input for a session or run, forwarded exactly as given.

@@ -4,6 +4,7 @@ import { call } from './client';
 import type {
   CommandView,
   CustomDraft,
+  HistoryEntry,
   HomeView,
   ImportReport,
   PtyEvent,
@@ -52,6 +53,9 @@ export const api = {
   deleteCustom: (id: string) => call<null>('custom_delete', { id }),
   exportCustom: () => call<string>('custom_export'),
   importCustom: (json: string) => call<ImportReport>('custom_import', { json }),
+
+  history: (limit = 50) => call<HistoryEntry[]>('history_get', { limit }),
+  clearHistory: () => call<null>('history_clear'),
 
   shells: () => call<ShellInfo[]>('shells_list'),
   /** Starts an interactive shell session. Events arrive in order; `exit` is last. */

@@ -20,6 +20,9 @@ interface XtermViewProps {
   readonly onResize?: (cols: number, rows: number) => void;
   /** Return true to consume an app-reserved key combination (it then never reaches the shell). */
   readonly onAppShortcut?: (event: KeyboardEvent) => boolean;
+  readonly fontSize?: number;
+  /** xterm.js accessibility tree for screen readers (costs some performance). */
+  readonly screenReaderMode?: boolean;
 }
 
 const ANSI_KEYS = [
@@ -48,9 +51,11 @@ function readTheme(): ITheme {
  * Ctrl+C with a selection (copy), Ctrl+Shift+C (copy), Ctrl+V / Ctrl+Shift+V (paste),
  * and the documented app shortcuts passed via `onAppShortcut`.
  */
-export function XtermView({ handleRef, ariaLabel, onData, onResize, onAppShortcut }: XtermViewProps) {
+export function XtermView({ handleRef, ariaLabel, onData, onResize, onAppShortcut, fontSize = 13, screenReaderMode = false }: XtermViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const initial = useRef({ fontSize, screenReaderMode });
   const callbacks = useRef({ onData, onResize, onAppShortcut });
   useEffect(() => {
     callbacks.current = { onData, onResize, onAppShortcut };
@@ -69,7 +74,8 @@ export function XtermView({ handleRef, ariaLabel, onData, onResize, onAppShortcu
     if (!container) return;
     const term = new Terminal({
       fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, monospace",
-      fontSize: 13,
+      fontSize: initial.current.fontSize,
+      screenReaderMode: initial.current.screenReaderMode,
       cursorBlink: true,
       scrollback: 5000,
       theme: readTheme(),
@@ -81,6 +87,7 @@ export function XtermView({ handleRef, ariaLabel, onData, onResize, onAppShortcu
     term.loadAddon(fit);
     term.open(container);
     termRef.current = term;
+    fitRef.current = fit;
 
     term.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown') return true;
@@ -116,8 +123,19 @@ export function XtermView({ handleRef, ariaLabel, onData, onResize, onAppShortcu
       resizeSub.dispose();
       term.dispose();
       termRef.current = null;
+      fitRef.current = null;
     };
   }, []);
+
+  // Preference changes apply live; the session keeps running.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.fontSize = fontSize;
+    term.options.screenReaderMode = screenReaderMode;
+    const container = containerRef.current;
+    if (container && container.clientWidth > 0 && container.clientHeight > 0) fitRef.current?.fit();
+  }, [fontSize, screenReaderMode]);
 
   return <div ref={containerRef} data-terminal="" role="group" aria-label={ariaLabel} className="h-full w-full overflow-hidden bg-[var(--cd-term-bg)] p-1" />;
 }

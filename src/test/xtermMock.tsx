@@ -12,11 +12,15 @@ export function XtermView({
   ariaLabel,
   onData,
   onAppShortcut,
+  fontSize,
+  screenReaderMode,
 }: {
   handleRef: Ref<TerminalHandle | null>;
   ariaLabel: string;
   onData?: (data: string) => void;
   onAppShortcut?: (event: KeyboardEvent) => boolean;
+  fontSize?: number;
+  screenReaderMode?: boolean;
 }) {
   const entry = { label: ariaLabel, screen: '', type: (data: string) => { onData?.(data); } };
   useImperativeHandle(handleRef, () => ({
@@ -39,7 +43,17 @@ export function XtermView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // Like the real view: app shortcuts are offered first; nothing else is handled here.
-  return <div data-terminal="" role="group" aria-label={ariaLabel} data-testid="xterm" onKeyDown={(e) => { onAppShortcut?.(e.nativeEvent); }} />;
+  return (
+    <div
+      data-terminal=""
+      role="group"
+      aria-label={ariaLabel}
+      data-testid="xterm"
+      data-font-size={fontSize}
+      data-screen-reader={screenReaderMode ? 'on' : 'off'}
+      onKeyDown={(e) => { onAppShortcut?.(e.nativeEvent); }}
+    />
+  );
 }
 
 export function screenOf(label: string): string {

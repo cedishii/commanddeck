@@ -91,6 +91,17 @@ pub struct SearchResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct HistoryEntry {
+    #[serde(flatten)]
+    pub row: crate::store::HistoryRow,
+    pub name: String,
+    pub shell: Option<Shell>,
+    /// False when the command was deleted since it ran.
+    pub exists: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImportReport {
     pub imported: usize,
 }
@@ -378,6 +389,42 @@ impl App {
 
     pub fn clear_recents(&self) -> AppResult<()> {
         self.with_store(|store| store.clear_recents())
+    }
+
+    // ---- run history ------------------------------------------------------------
+
+    pub fn record_run(
+        &self,
+        id: &str,
+        started_at: i64,
+        duration_ms: i64,
+        exit_code: Option<i64>,
+    ) -> AppResult<()> {
+        self.with_store(|store| store.record_run(id, started_at, duration_ms, exit_code))
+    }
+
+    /// Recent runs, newest first, with the command's current name and shell.
+    pub fn history(&self, limit: i64) -> AppResult<Vec<HistoryEntry>> {
+        self.with_store(|store| {
+            let commands = self.all_commands(store)?;
+            Ok(store
+                .history(limit.clamp(1, crate::store::HISTORY_MAX_ROWS))?
+                .into_iter()
+                .map(|row| {
+                    let command = commands.iter().find(|c| c.id == row.command_id);
+                    HistoryEntry {
+                        name: command.map_or_else(|| row.command_id.clone(), |c| c.name.clone()),
+                        shell: command.map(|c| c.shell),
+                        exists: command.is_some(),
+                        row,
+                    }
+                })
+                .collect())
+        })
+    }
+
+    pub fn clear_history(&self) -> AppResult<()> {
+        self.with_store(|store| store.clear_history())
     }
 
     // ---- aliases --------------------------------------------------------------
@@ -893,6 +940,8 @@ mod tests {
         a.update_settings(&SettingsPatch {
             quick_action_limit: Some(15),
             theme: Some(crate::store::Theme::Dark),
+            terminal_font_size: Some(18),
+            ..Default::default()
         })
         .unwrap();
         a.home_remove("cmd.ping").unwrap();
@@ -937,6 +986,23 @@ mod tests {
         assert!(a.runnable_command(&custom.command.id).is_err());
         // Running counts as a use.
         assert_eq!(a.recents().unwrap()[0].command.id, "cmd.netstat.b");
+    }
+
+    #[test]
+    fn history_shows_current_names_and_survives_deleted_commands() {
+        let a = app();
+        let custom = a.custom_create(draft("Git branches")).unwrap().command.id;
+        a.record_run("cmd.ping", now_millis() - 10, 120, Some(0))
+            .unwrap();
+        a.record_run(&custom, now_millis(), 5, Some(1)).unwrap();
+        a.custom_delete(&custom).unwrap();
+        let h = a.history(10).unwrap();
+        assert_eq!(h[0].name, custom);
+        assert!(!h[0].exists);
+        assert_eq!(h[1].name, "Check network connectivity");
+        assert_eq!(h[1].shell, Some(Shell::Cmd));
+        a.clear_history().unwrap();
+        assert!(a.history(10).unwrap().is_empty());
     }
 
     #[test]

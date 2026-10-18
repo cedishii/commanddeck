@@ -112,14 +112,44 @@ export interface SearchResult {
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type QuickActionLimit = 10 | 15;
 
+export type Density = 'comfortable' | 'compact';
+export type SearchKey = 'k' | 'p' | 'j';
+/** 0 = off, -1 = forever, otherwise days. */
+export type RetentionDays = 0 | 7 | 30 | 90 | -1;
+
 export interface Settings {
   readonly theme: ThemePreference;
   readonly quickActionLimit: QuickActionLimit;
+  readonly density: Density;
+  readonly terminalFontSize: number;
+  readonly terminalScreenReader: boolean;
+  readonly autoStartSessions: boolean;
+  readonly searchShortcut: SearchKey;
+  readonly historyRetentionDays: RetentionDays;
 }
 
-export interface SettingsPatch {
-  readonly theme?: ThemePreference;
-  readonly quickActionLimit?: QuickActionLimit;
+export type SettingsPatch = Partial<Settings>;
+
+export const DEFAULT_SETTINGS: Settings = {
+  theme: 'system',
+  quickActionLimit: 10,
+  density: 'comfortable',
+  terminalFontSize: 13,
+  terminalScreenReader: false,
+  autoStartSessions: true,
+  searchShortcut: 'k',
+  historyRetentionDays: 30,
+};
+
+export interface HistoryEntry {
+  readonly id: number;
+  readonly commandId: string;
+  readonly startedAt: number;
+  readonly durationMs: number;
+  readonly exitCode: number | null;
+  readonly name: string;
+  readonly shell: Shell | null;
+  readonly exists: boolean;
 }
 
 export interface CustomDraft {

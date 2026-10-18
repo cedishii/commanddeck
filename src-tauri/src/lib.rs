@@ -83,6 +83,8 @@ pub fn run() {
             commands::pty_write,
             commands::pty_resize,
             commands::pty_close,
+            commands::history_get,
+            commands::history_clear,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the CommandDeck window");

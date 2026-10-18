@@ -5,6 +5,15 @@
  * passing when changing any color here.
  */
 
+/* Density: vertical padding of command rows. */
+:root {
+  --cd-row-py: 0.625rem;
+}
+
+:root[data-density='compact'] {
+  --cd-row-py: 0.3rem;
+}
+
 :root,
 :root[data-theme='light'] {
   color-scheme: light;

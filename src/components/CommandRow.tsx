@@ -42,7 +42,7 @@ export function CommandRow({ entry, index, showShell = false, label, note, menuI
 
   return (
     <li
-      className="grid grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-start gap-x-3 gap-y-2 rounded-lg border border-border bg-surface px-3 py-2.5 lg:grid-cols-[2rem_minmax(12rem,1fr)_auto_minmax(0,1.5fr)_auto]"
+      className="grid grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-start gap-x-3 gap-y-2 rounded-lg border border-border bg-surface px-3 py-[var(--cd-row-py)] lg:grid-cols-[2rem_minmax(12rem,1fr)_auto_minmax(0,1.5fr)_auto]"
       data-testid="command-row"
     >
       <span className="pt-0.5 text-right font-mono text-sm text-muted tabular-nums">{index}</span>

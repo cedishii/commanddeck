@@ -37,7 +37,18 @@ const MIGRATIONS: &[&str] = &[
          command_id TEXT NOT NULL,
          PRIMARY KEY (shell, alias)
      );",
+    // 2: run history (metadata only; output is never stored)
+    "CREATE TABLE run_history (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         command_id TEXT NOT NULL,
+         started_at INTEGER NOT NULL,
+         duration_ms INTEGER NOT NULL,
+         exit_code INTEGER
+     );
+     CREATE INDEX run_history_started ON run_history(started_at);",
 ];
+
+pub const HISTORY_MAX_ROWS: i64 = 1000;
 
 pub const RECENTS_MAX: usize = 20;
 
@@ -56,11 +67,26 @@ pub enum Theme {
     Dark,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    Comfortable,
+    Compact,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub theme: Theme,
     pub quick_action_limit: u32,
+    pub density: Density,
+    pub terminal_font_size: u32,
+    pub terminal_screen_reader: bool,
+    pub auto_start_sessions: bool,
+    /// Letter used with Ctrl to open search: "k", "p" or "j".
+    pub search_shortcut: String,
+    /// 0 = don't keep history, -1 = keep forever, otherwise days.
+    pub history_retention_days: i64,
 }
 
 impl Default for Settings {
@@ -68,6 +94,12 @@ impl Default for Settings {
         Settings {
             theme: Theme::System,
             quick_action_limit: 10,
+            density: Density::Comfortable,
+            terminal_font_size: 13,
+            terminal_screen_reader: false,
+            auto_start_sessions: true,
+            search_shortcut: "k".into(),
+            history_retention_days: 30,
         }
     }
 }
@@ -77,6 +109,26 @@ impl Default for Settings {
 pub struct SettingsPatch {
     pub theme: Option<Theme>,
     pub quick_action_limit: Option<u32>,
+    pub density: Option<Density>,
+    pub terminal_font_size: Option<u32>,
+    pub terminal_screen_reader: Option<bool>,
+    pub auto_start_sessions: Option<bool>,
+    pub search_shortcut: Option<String>,
+    pub history_retention_days: Option<i64>,
+}
+
+pub const FONT_SIZES: std::ops::RangeInclusive<u32> = 11..=20;
+pub const SEARCH_KEYS: [&str; 3] = ["k", "p", "j"];
+pub const RETENTION_DAYS: [i64; 5] = [0, 7, 30, 90, -1];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryRow {
+    pub id: i64,
+    pub command_id: String,
+    pub started_at: i64,
+    pub duration_ms: i64,
+    pub exit_code: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -273,25 +325,88 @@ impl Store {
         Ok(())
     }
 
+    /// Stored JSON value for `key`, if present, parseable and accepted by `valid`.
+    fn setting<T: serde::de::DeserializeOwned>(
+        &self,
+        key: &str,
+        valid: impl Fn(&T) -> bool,
+    ) -> AppResult<Option<T>> {
+        Ok(self
+            .setting_raw(key)?
+            .and_then(|v| serde_json::from_str::<T>(&v).ok())
+            .filter(valid))
+    }
+
+    fn set_setting<T: Serialize>(&self, key: &str, value: &T) -> AppResult<()> {
+        self.set_setting_raw(key, &serde_json::to_string(value)?)
+    }
+
     /// Reads settings. Malformed or out-of-range stored values fall back to defaults.
     pub fn settings(&self) -> AppResult<Settings> {
-        let defaults = Settings::default();
-        let theme = self
-            .setting_raw("theme")?
-            .and_then(|v| serde_json::from_str::<Theme>(&v).ok())
-            .unwrap_or(defaults.theme);
-        let quick_action_limit = self
-            .setting_raw("quickActionLimit")?
-            .and_then(|v| v.parse::<u32>().ok())
-            .filter(|n| *n == 10 || *n == 15)
-            .unwrap_or(defaults.quick_action_limit);
+        let d = Settings::default();
         Ok(Settings {
-            theme,
-            quick_action_limit,
+            theme: self.setting("theme", |_: &Theme| true)?.unwrap_or(d.theme),
+            quick_action_limit: self
+                .setting("quickActionLimit", |n: &u32| *n == 10 || *n == 15)?
+                .unwrap_or(d.quick_action_limit),
+            density: self
+                .setting("density", |_: &Density| true)?
+                .unwrap_or(d.density),
+            terminal_font_size: self
+                .setting("terminalFontSize", |n: &u32| FONT_SIZES.contains(n))?
+                .unwrap_or(d.terminal_font_size),
+            terminal_screen_reader: self
+                .setting("terminalScreenReader", |_: &bool| true)?
+                .unwrap_or(d.terminal_screen_reader),
+            auto_start_sessions: self
+                .setting("autoStartSessions", |_: &bool| true)?
+                .unwrap_or(d.auto_start_sessions),
+            search_shortcut: self
+                .setting("searchShortcut", |k: &String| {
+                    SEARCH_KEYS.contains(&k.as_str())
+                })?
+                .unwrap_or(d.search_shortcut),
+            history_retention_days: self
+                .setting("historyRetentionDays", |n: &i64| RETENTION_DAYS.contains(n))?
+                .unwrap_or(d.history_retention_days),
         })
     }
 
     pub fn update_settings(&self, patch: &SettingsPatch) -> AppResult<Settings> {
+        if let Some(size) = patch.terminal_font_size {
+            if !FONT_SIZES.contains(&size) {
+                return Err(AppError::invalid(
+                    "terminalFontSize",
+                    "must be between 11 and 20",
+                ));
+            }
+            self.set_setting("terminalFontSize", &size)?;
+        }
+        if let Some(key) = &patch.search_shortcut {
+            if !SEARCH_KEYS.contains(&key.as_str()) {
+                return Err(AppError::invalid("searchShortcut", "must be k, p or j"));
+            }
+            self.set_setting("searchShortcut", key)?;
+        }
+        if let Some(days) = patch.history_retention_days {
+            if !RETENTION_DAYS.contains(&days) {
+                return Err(AppError::invalid(
+                    "historyRetentionDays",
+                    "must be off, 7, 30, 90 days or forever",
+                ));
+            }
+            self.set_setting("historyRetentionDays", &days)?;
+            self.prune_history(days, now_millis())?;
+        }
+        if let Some(density) = patch.density {
+            self.set_setting("density", &density)?;
+        }
+        if let Some(v) = patch.terminal_screen_reader {
+            self.set_setting("terminalScreenReader", &v)?;
+        }
+        if let Some(v) = patch.auto_start_sessions {
+            self.set_setting("autoStartSessions", &v)?;
+        }
         if let Some(limit) = patch.quick_action_limit {
             if limit != 10 && limit != 15 {
                 return Err(AppError::invalid("quickActionLimit", "must be 10 or 15"));
@@ -309,6 +424,66 @@ impl Store {
             self.set_setting_raw("theme", &serde_json::to_string(&theme)?)?;
         }
         self.settings()
+    }
+
+    // ---- run history ---------------------------------------------------------
+
+    /// Records a finished run if history is enabled, then applies retention.
+    pub fn record_run(
+        &self,
+        command_id: &str,
+        started_at: i64,
+        duration_ms: i64,
+        exit_code: Option<i64>,
+    ) -> AppResult<()> {
+        let retention = self.settings()?.history_retention_days;
+        if retention == 0 {
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO run_history (command_id, started_at, duration_ms, exit_code) VALUES (?1, ?2, ?3, ?4)",
+            params![command_id, started_at, duration_ms, exit_code],
+        )?;
+        self.prune_history(retention, now_millis())
+    }
+
+    /// Deletes entries older than the retention period and keeps at most HISTORY_MAX_ROWS.
+    pub fn prune_history(&self, retention_days: i64, now: i64) -> AppResult<()> {
+        if retention_days == 0 {
+            self.conn.execute("DELETE FROM run_history", [])?;
+        } else if retention_days > 0 {
+            let cutoff = now - retention_days * 24 * 60 * 60 * 1000;
+            self.conn
+                .execute("DELETE FROM run_history WHERE started_at < ?1", [cutoff])?;
+        }
+        self.conn.execute(
+            "DELETE FROM run_history WHERE id NOT IN (SELECT id FROM run_history ORDER BY started_at DESC, id DESC LIMIT ?1)",
+            [HISTORY_MAX_ROWS],
+        )?;
+        Ok(())
+    }
+
+    pub fn history(&self, limit: i64) -> AppResult<Vec<HistoryRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, command_id, started_at, duration_ms, exit_code FROM run_history ORDER BY started_at DESC, id DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map([limit], |r| {
+                Ok(HistoryRow {
+                    id: r.get(0)?,
+                    command_id: r.get(1)?,
+                    started_at: r.get(2)?,
+                    duration_ms: r.get(3)?,
+                    exit_code: r.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn clear_history(&self) -> AppResult<()> {
+        self.conn.execute("DELETE FROM run_history", [])?;
+        Ok(())
     }
 
     pub fn is_seeded(&self) -> AppResult<bool> {
@@ -682,13 +857,25 @@ mod tests {
             .update_settings(&SettingsPatch {
                 theme: Some(Theme::Dark),
                 quick_action_limit: Some(15),
+                density: Some(Density::Compact),
+                terminal_font_size: Some(16),
+                terminal_screen_reader: Some(true),
+                auto_start_sessions: Some(false),
+                search_shortcut: Some("p".into()),
+                history_retention_days: Some(-1),
             })
             .unwrap();
         assert_eq!(
             updated,
             Settings {
                 theme: Theme::Dark,
-                quick_action_limit: 15
+                quick_action_limit: 15,
+                density: Density::Compact,
+                terminal_font_size: 16,
+                terminal_screen_reader: true,
+                auto_start_sessions: false,
+                search_shortcut: "p".into(),
+                history_retention_days: -1,
             }
         );
     }
@@ -696,9 +883,142 @@ mod tests {
     #[test]
     fn malformed_settings_fall_back_to_defaults() {
         let s = store();
-        s.set_setting_raw("theme", "{broken").unwrap();
-        s.set_setting_raw("quickActionLimit", "12").unwrap();
+        for (key, bad) in [
+            ("theme", "{broken"),
+            ("quickActionLimit", "12"),
+            ("density", "\"tiny\""),
+            ("terminalFontSize", "99"),
+            ("terminalScreenReader", "\"yes\""),
+            ("autoStartSessions", "maybe"),
+            ("searchShortcut", "\"x\""),
+            ("historyRetentionDays", "3"),
+        ] {
+            s.set_setting_raw(key, bad).unwrap();
+        }
         assert_eq!(s.settings().unwrap(), Settings::default());
+    }
+
+    #[test]
+    fn invalid_new_settings_are_rejected_without_partial_writes_to_that_key() {
+        let s = store();
+        for patch in [
+            SettingsPatch {
+                terminal_font_size: Some(40),
+                ..Default::default()
+            },
+            SettingsPatch {
+                search_shortcut: Some("ctrl+alt+del".into()),
+                ..Default::default()
+            },
+            SettingsPatch {
+                history_retention_days: Some(5),
+                ..Default::default()
+            },
+        ] {
+            assert!(matches!(
+                s.update_settings(&patch),
+                Err(AppError::Validation(_))
+            ));
+        }
+        assert_eq!(s.settings().unwrap(), Settings::default());
+    }
+
+    #[test]
+    fn run_history_records_orders_and_clears() {
+        let s = store();
+        s.record_run("cmd.ping", now_millis() - 2000, 1500, Some(0))
+            .unwrap();
+        s.record_run("cmd.tasklist", now_millis() - 1000, 40, Some(1))
+            .unwrap();
+        let h = s.history(10).unwrap();
+        assert_eq!(
+            h.iter().map(|r| r.command_id.as_str()).collect::<Vec<_>>(),
+            ["cmd.tasklist", "cmd.ping"]
+        );
+        assert_eq!(h[1].exit_code, Some(0));
+        assert_eq!(h[1].duration_ms, 1500);
+        s.clear_history().unwrap();
+        assert!(s.history(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn run_history_respects_retention() {
+        let s = store();
+        let day = 24 * 60 * 60 * 1000;
+        s.record_run("old", now_millis() - 40 * day, 1, Some(0))
+            .unwrap();
+        s.record_run("recent", now_millis() - day, 1, Some(0))
+            .unwrap();
+        // Default retention is 30 days: the 40-day-old entry is pruned on insert.
+        assert_eq!(
+            s.history(10)
+                .unwrap()
+                .iter()
+                .map(|r| r.command_id.as_str())
+                .collect::<Vec<_>>(),
+            ["recent"]
+        );
+
+        s.update_settings(&SettingsPatch {
+            history_retention_days: Some(0),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(
+            s.history(10).unwrap().is_empty(),
+            "turning history off deletes it"
+        );
+        s.record_run("ignored", now_millis(), 1, Some(0)).unwrap();
+        assert!(
+            s.history(10).unwrap().is_empty(),
+            "nothing is recorded while history is off"
+        );
+    }
+
+    #[test]
+    fn run_history_is_capped() {
+        let s = store();
+        s.update_settings(&SettingsPatch {
+            history_retention_days: Some(-1),
+            ..Default::default()
+        })
+        .unwrap();
+        for i in 0..(HISTORY_MAX_ROWS + 5) {
+            s.conn()
+                .execute("INSERT INTO run_history (command_id, started_at, duration_ms, exit_code) VALUES ('x', ?1, 1, 0)", [i])
+                .unwrap();
+        }
+        s.record_run("latest", now_millis(), 1, None).unwrap();
+        assert_eq!(
+            s.history(HISTORY_MAX_ROWS + 10).unwrap().len() as i64,
+            HISTORY_MAX_ROWS
+        );
+        assert_eq!(s.history(1).unwrap()[0].command_id, "latest");
+    }
+
+    #[test]
+    fn version_1_databases_are_migrated_with_data_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("commanddeck.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(&format!(
+                "BEGIN; {} PRAGMA user_version = 1; COMMIT;",
+                MIGRATIONS[0]
+            ))
+            .unwrap();
+            conn.execute(
+                "INSERT INTO favorites (command_id, created_at) VALUES ('cmd.ping', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let store = Store::open(&path).unwrap().store;
+        assert_eq!(store.favorites().unwrap(), ["cmd.ping"]);
+        store
+            .record_run("cmd.ping", now_millis(), 1, Some(0))
+            .unwrap();
+        assert_eq!(store.history(5).unwrap().len(), 1);
     }
 
     #[test]
