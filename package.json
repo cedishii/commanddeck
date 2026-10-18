@@ -4,6 +4,7 @@
   "version": "0.3.0",
   "description": "A Windows desktop controller for CMD and PowerShell.",
   "author": "Cedrick Kaneko",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
