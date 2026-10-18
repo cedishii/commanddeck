@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
+import { clearMocks } from '@tauri-apps/api/mocks';
 import { afterEach, vi } from 'vitest';
 
 /** jsdom has no matchMedia. Default to a light system theme; tests can override `matches`. */
@@ -23,6 +24,7 @@ Object.defineProperty(window, 'matchMedia', {
 
 afterEach(() => {
   cleanup();
+  clearMocks();
   window.localStorage.clear();
   mediaState.dark = false;
   delete document.documentElement.dataset.theme;

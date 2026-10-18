@@ -47,10 +47,18 @@ export function ShellBadge({ shell }: { shell: Shell }) {
   return <Chip className="border border-border text-muted">{SHELL_LABEL[shell]}</Chip>;
 }
 
-export function SampleBadge() {
+export function MultiStepBadge() {
   return (
-    <Chip className="border border-dashed border-border text-muted" title="Placeholder data for Phase 1. Replaced by the verified catalog in Phase 2.">
-      Sample data
+    <Chip className="border border-border text-muted" title="Runs several operations (chaining, pipes, multiple lines) or a script.">
+      Multi-step
+    </Chip>
+  );
+}
+
+export function CustomBadge() {
+  return (
+    <Chip className="border border-dashed border-border text-muted" title="Your own command. Its risk level is your declaration and is not analyzed by CommandDeck yet.">
+      Custom
     </Chip>
   );
 }

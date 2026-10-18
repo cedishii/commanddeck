@@ -1,19 +1,34 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { api } from '../ipc/api';
+import type { ThemePreference } from '../ipc/types';
 
-export type ThemePreference = 'system' | 'light' | 'dark';
+export type { ThemePreference };
 export type ResolvedTheme = 'light' | 'dark';
 
-// Temporary: the preference lives in localStorage until the Phase 2 settings
-// store (SQLite in the backend) exists. Reads and writes must never throw.
-const STORAGE_KEY = 'commanddeck.theme';
+// The backend settings store is the source of truth. localStorage only caches
+// the last value so the first paint uses the right theme (no flash). Every
+// access is wrapped: storage may be unavailable.
+const CACHE_KEY = 'commanddeck.theme';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
-function readStoredPreference(): ThemePreference {
+function isPreference(value: unknown): value is ThemePreference {
+  return value === 'light' || value === 'dark' || value === 'system';
+}
+
+function readCache(): ThemePreference {
   try {
-    const value = window.localStorage.getItem(STORAGE_KEY);
-    return value === 'light' || value === 'dark' || value === 'system' ? value : 'system';
+    const value = window.localStorage.getItem(CACHE_KEY);
+    return isPreference(value) ? value : 'system';
   } catch {
     return 'system';
+  }
+}
+
+function writeCache(value: ThemePreference) {
+  try {
+    window.localStorage.setItem(CACHE_KEY, value);
+  } catch {
+    // Cache only; the backend keeps the real value.
   }
 }
 
@@ -24,14 +39,28 @@ function systemTheme(): ResolvedTheme {
 interface ThemeContextValue {
   readonly preference: ThemePreference;
   readonly resolved: ResolvedTheme;
-  readonly setPreference: (preference: ThemePreference) => void;
+  /** Applies immediately; resolves when saved, rejects if the backend refused. */
+  readonly setPreference: (preference: ThemePreference) => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference);
+  const [preference, setPreferenceState] = useState<ThemePreference>(readCache);
   const [system, setSystem] = useState<ResolvedTheme>(systemTheme);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.settings().then(
+      (s) => {
+        if (cancelled || !isPreference(s.theme)) return;
+        setPreferenceState(s.theme);
+        writeCache(s.theme);
+      },
+      () => { /* Backend unavailable: keep the cached preference. */ },
+    );
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const query = window.matchMedia(DARK_QUERY);
@@ -50,13 +79,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     () => ({
       preference,
       resolved,
-      setPreference: (next) => {
+      setPreference: async (next) => {
         setPreferenceState(next);
-        try {
-          window.localStorage.setItem(STORAGE_KEY, next);
-        } catch {
-          // Storage unavailable: the choice still applies for this session.
-        }
+        writeCache(next);
+        await api.updateSettings({ theme: next });
       },
     }),
     [preference, resolved],

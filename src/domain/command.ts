@@ -1,56 +1,13 @@
 /**
- * Domain types for command entries.
- *
- * In Phase 2 these mirror the catalog JSON schema served by the Rust backend
- * (docs/ARCHITECTURE.md §4). Presentation code only ever reads `syntax` as the
- * canonical text. Any shortened preview is a display concern.
+ * Domain vocabulary for commands. Shapes come from the backend (src/ipc/types.ts);
+ * this module adds presentation labels. Presentation code only ever reads
+ * `syntax` as the canonical text. Any shortened preview is a display concern.
  */
+import type { CommandView, RiskLevel, Shell } from '../ipc/types';
 
-export type Shell = 'cmd' | 'powershell';
+export type { CategoryId, CommandDetails, RiskLevel, Shell, SyntaxPart } from '../ipc/types';
 
-/** L1 routine, L2 meaningful change, L3 high-impact (docs/SECURITY.md §3). */
-export type RiskLevel = 'L1' | 'L2' | 'L3';
-
-export type CategoryId =
-  | 'networking'
-  | 'files'
-  | 'system-info'
-  | 'processes'
-  | 'services'
-  | 'troubleshooting'
-  | 'disk'
-  | 'administration'
-  | 'security'
-  | 'environment'
-  | 'windows-config'
-  | 'automation';
-
-export interface SyntaxPart {
-  readonly part: string;
-  readonly meaning: string;
-}
-
-export interface CommandDetails {
-  readonly whenToUse?: string;
-  readonly syntaxParts?: readonly SyntaxPart[];
-  readonly expectedOutput?: string;
-  readonly sideEffects?: readonly string[];
-  readonly cautions?: readonly string[];
-}
-
-export interface CommandEntry {
-  readonly id: string;
-  readonly shell: Shell;
-  readonly name: string;
-  readonly summary: string;
-  readonly category: CategoryId;
-  /** Canonical command text. Copy and (later) execution always use this exact value. */
-  readonly syntax: string;
-  readonly requiresAdmin: boolean;
-  readonly risk: RiskLevel;
-  readonly modifies: boolean;
-  readonly details?: CommandDetails;
-}
+export type CommandEntry = CommandView;
 
 export const SHELL_LABEL: Record<Shell, string> = {
   cmd: 'CMD',

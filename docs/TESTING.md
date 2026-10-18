@@ -65,6 +65,30 @@ Registry versions checked 2026-10-18: tauri 2.12.4, @tauri-apps/cli 2.12.3, @xte
 | 2026-10-18 | 1 | NSIS installer `/S` (owner approved) | Exit 0. Per-user install to `%LOCALAPPDATA%\CommandDeck`, no UAC; HKCU uninstall entry (CommandDeck 0.1.0, publisher Cedrick Kaneko); Start Menu shortcut; installed exe launches and responds. MSI not run |
 | — | 1 | **Not yet run:** MSI install; copy-to-clipboard inside the native WebView2 (tested in jsdom and Chromium only); manual Tab-order pass in the native window; live Windows theme switch | Pending owner OK / manual check |
 
+| 2026-10-18 | 2 | Admin-requirement probes as standard user (read-only/harmless commands) | No admin: ipconfig /flushdns, Clear-DnsClientCache (both flush the DNS cache, harmless), netsh advfirewall show, Get-Disk, Get-Volume, Get-MpComputerStatus, Get-WinEvent System, Get-LocalGroupMember, Get-NetFirewallProfile, Get-HotFix, Get-NetTCPConnection, whoami /all, net localgroup, sc query, netsh wlan show profiles. **Admin:** fsutil volume diskfree ("Access is denied"), netstat -b ("requires elevation"), manage-bde -status, chkdsk C:, sfc (even `/?`) |
+| 2026-10-18 | 2 | `scripts/verify-catalog.ps1` | First run: 3 failures (2 doc URLs 404, sfc flag check impossible without admin). Fixed. **Final: 69 entries, 64 URLs, all pass.** Doc page titles reviewed manually, all match |
+| 2026-10-18 | 2 | `cargo test`: catalog validation, search relevance, store, app layer | **51 pass**, 1 ignored (`print_rankings` dev aid) |
+| 2026-10-18 | 2 | `cargo clippy --all-targets -D warnings`, `cargo fmt --check` | Pass (after fixing 5 style findings) |
+| 2026-10-18 | 2 | `npm test`: 11 files (App, CommandRow, SyntaxPreview, DetailPanel, SearchPalette, CustomCommandEditor, HomePage, ShellPage, theme/Settings, ipc client, tokens) via `mockIPC` fake backend | **106/106 pass** |
+| 2026-10-18 | 2 | `npm run typecheck`, `npm run lint` | Pass (after fixing a render-time counter mutation in SearchPalette and a redundant null check) |
+| 2026-10-18 | 2 | **Real-app e2e**: `tauri dev` with isolated data + WebView2 profile, driven via Chrome DevTools Protocol; backend contract through the real IPC bridge | All pass: 69 commands; search tops correct; Home seeded; limit/notFound/validation errors with fields; **unknown field `elevate` rejected by backend**; custom create→alias search→export→delete; open_source refuses non-catalog ids |
+| 2026-10-18 | 2 | Real-app UI e2e with trusted input (CDP mouse/keyboard): copy, Ctrl+K, typing, Enter, Esc, menus, editor, theme | All pass. **A real click on Copy put `ping google.com` on the Windows clipboard** (closes the Phase 1 open item). No document overflow (780 = viewport). 8 screenshots reviewed |
+| 2026-10-18 | 2 | Restart persistence (tauri dev auto-restart after a Rust change, same data dir) | Theme dark, Home 10 items, recents kept across the new process |
+| 2026-10-18 | 2 | `npm run tauri build` (0.2.0) | Pass: `CommandDeck_0.2.0_x64-setup.exe` (2.91 MB), `CommandDeck_0.2.0_x64_en-US.msi` (4.19 MB) |
+| 2026-10-18 | 2 | Release exe under the **production CSP** (isolated WebView2 profile; the real data folder had no database, so the one created was deleted afterwards) | IPC works: 69 commands, search correct, fresh seed = 8 quick actions, 8 rows rendered. Data folder restored to its prior state |
+| — | 2 | **Not run:** installing 0.2.0 over the owner's 0.1.0 (needs owner OK); MSI install; human Tab-order pass | Pending |
+
+How the real-app e2e works (repeatable): set `COMMANDDECK_DATA_DIR` and `WEBVIEW2_USER_DATA_FOLDER` to scratch folders and `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223`, then run `npm run tauri dev`. Then connect to `http://127.0.0.1:9223/json` and evaluate scripts / send `Input.dispatchMouseEvent` and `Input.dispatchKeyEvent`. The driver used was a small Node script (Node 24 has built-in WebSocket). It lived in the session scratchpad, so moving it into `tests/e2e/` is a Phase 3 task.
+
+### Bugs found during Phase 2 verification (all fixed)
+
+1. Search: "ip" ranked execution-policy entries because phrase bonuses used substring matching ("scr**ip**t"). Now whole-word matching. Regression test `short_queries_match_whole_words_only_regression`.
+2. A database from a newer app version would have been treated as corrupt and moved aside, looking like data loss after a downgrade. Now refused untouched with a clear message. Test `newer_schema_is_refused_instead_of_damaged`.
+3. A startup failure would have crashed the app (Tauri setup error). Now the window opens with an explanation. Test *shows a clear error screen when the backend could not start*.
+4. `useAsync` flashed a loading state on every refresh. Now it keeps showing the previous data while refetching.
+5. First run filled Home to 10 of 10, which disabled "Add command" immediately. Now seeds 8. Rust tests updated.
+6. Test isolation: a dev instance with debugging flags failed against the running installed app's WebView2 profile (0x8007139F). Resolved by isolating `WEBVIEW2_USER_DATA_FOLDER`; the owner's running app was not touched.
+
 ### Bugs found during Phase 1 verification (all fixed)
 
 1. Page title received focus on startup: React StrictMode runs effects twice, consuming the "first render" flag. Fixed by comparing with the previous page. Test: *does not move focus on startup… (regression)*.

@@ -53,9 +53,24 @@ Scope: scaffold Tauri 2 + React + TS; app shell; nav; four pages; design tokens;
 13. App header has a placeholder slot for the privilege badge (`Standard user` / `Administrator`) and the Advanced Mode badge, labeled as not yet wired (real detection is Phase 4).
 14. Results recorded in TESTING.md; CHANGELOG updated.
 
-## Phase 2 — Command catalog & discovery ☐
+## Phase 2 — Command catalog & discovery ☑ (2026-10-18)
 
-Structured JSON catalog + schema; ~40–60 verified starter entries across CMD and PowerShell categories (each with sources); backend search index with relevance test suite (incl. "fix internet", "find large files", "see running applications", "flush dns"); Ctrl+K palette; favorites, aliases, recent; Home 10/15 limit with add/remove/reorder/pin/rename; custom entries with validation & import; SQLite persistence.
+Scope as planned: structured JSON catalog with verified starter entries, backend search with a relevance suite, Ctrl+K palette, favorites/aliases/recents, Home 10/15 with add/remove/reorder/rename, custom entries with validation and import, SQLite persistence. These criteria were written out at the start of the phase.
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| 1 | Catalog is structured data separate from the UI, embedded and validated at startup | ☑ | `catalog/*.json`, `load_builtin()`, Rust tests incl. malformed JSON |
+| 2 | 40–60+ starter entries across both shells, each verified against Windows and cited docs | ☑ | 69 entries (36 CMD, 33 PS). `verify-catalog.ps1` all pass (programs, flags, cmdlets, parameters, 64 URLs); titles reviewed; admin needs probed |
+| 3 | Search by name, alias, keyword, task phrase, category; CMD/PS distinguished; relevant results first | ☑ | Relevance suite (10 tests). Real-app e2e: "flush dns", "fix internet", "find large files", "see running applications" |
+| 4 | Ctrl+K palette, keyboard-driven, works with shortcuts and terminal-safe design | ☑ | SearchPalette tests (7) + real-key e2e in the native window |
+| 5 | Favorites, recents, personal aliases | ☑ | Rust + UI tests; e2e recents after real copy |
+| 6 | Home: 10/15 limit, add/remove/reorder/rename without deleting catalog entries | ☑ | Rust store/app tests; HomePage tests (10); e2e limit error |
+| 7 | Custom commands: create/edit/delete/search, validation, import/export, can't gain trust from labels | ☑ | Rust app tests (validation, shell lock, import all-or-nothing, oversized/malformed/unknown-field); editor tests; e2e create→search→delete |
+| 8 | Local persistence that survives restart and recovers from damage | ☑ | Rust file-DB tests (reopen, corrupt → moved aside, newer schema refused); e2e restart kept theme/Home/recents |
+| 9 | Syntax preserved verbatim end to end | ☑ | Rust test (newlines, quotes, `$env:`), UI copy tests, real Windows clipboard check |
+| 10 | All checks pass; release build produces installers | ☑ | See TESTING.md 2026-10-18 Phase 2 rows |
+
+Not in scope / deferred: typo-tolerant search, catalog entries with runnable parameters (Phase 3 invocation), installing 0.2.0 over the owner's 0.1.0 (needs owner OK).
 
 ## Phase 3 — Native terminal integration ☐
 

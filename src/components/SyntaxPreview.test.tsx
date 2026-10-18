@@ -1,6 +1,6 @@
 import { screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderApp } from '../test/render';
+import { renderWithContext as renderApp } from '../test/render';
 import { SyntaxPreview } from './SyntaxPreview';
 
 const LONG =

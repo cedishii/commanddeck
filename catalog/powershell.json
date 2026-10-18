@@ -1,0 +1,665 @@
+{
+  "$schema": "./schema/catalog.schema.json",
+  "version": 1,
+  "shell": "powershell",
+  "commands": [
+    {
+      "id": "ps.computer-info",
+      "name": "Show computer information",
+      "summary": "Detailed Windows, BIOS, hardware and locale information as properties.",
+      "category": "system-info",
+      "syntax": "Get-ComputerInfo",
+      "aliases": ["gin"],
+      "keywords": ["system information", "windows version", "bios", "hardware", "os build"],
+      "tasks": ["what version of windows do i have", "show hardware info"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "A long list of properties such as WindowsProductName, OsVersion, CsManufacturer, BiosVersion.",
+        "cautions": ["Takes a few seconds."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Get-ComputerInfo" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-computerinfo?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.uptime",
+      "name": "How long since the last restart",
+      "summary": "Calculates how long Windows has been running since it last started.",
+      "category": "system-info",
+      "syntax": "(Get-Date) - (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime",
+      "aliases": ["uptime"],
+      "keywords": ["uptime", "last boot", "boot time", "restart time"],
+      "tasks": ["when did the pc last restart", "how long has the computer been on"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [
+          { "part": "Get-CimInstance -ClassName Win32_OperatingSystem", "meaning": "Reads operating system information, including LastBootUpTime." },
+          { "part": "(Get-Date) - …", "meaning": "Subtracting two dates gives a TimeSpan (days, hours, minutes)." }
+        ],
+        "expectedOutput": "A TimeSpan: Days, Hours, Minutes, Seconds and totals.",
+        "cautions": ["With Fast Startup enabled, shutting down does not reset this; only a restart does.", "Windows PowerShell 5.1 has no Get-Uptime cmdlet (PowerShell 7 does)."]
+      },
+      "programs": [
+        { "kind": "cmdlet", "name": "Get-Date" },
+        { "kind": "cmdlet", "name": "Get-CimInstance", "parameters": ["ClassName"] }
+      ],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.volumes",
+      "name": "Show drives and free space",
+      "summary": "Lists each volume with its file system, health, size and remaining free space.",
+      "category": "system-info",
+      "syntax": "Get-Volume",
+      "aliases": [],
+      "keywords": ["free space", "disk space", "drives", "volumes", "storage", "capacity"],
+      "tasks": ["how much disk space is left", "check free space"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Columns: DriveLetter, FriendlyName, FileSystemType, DriveType, HealthStatus, SizeRemaining, Size." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-Volume" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/storage/get-volume"]
+    },
+    {
+      "id": "ps.get-process",
+      "name": "View running processes",
+      "summary": "Lists running processes with CPU time, memory and process ID.",
+      "category": "services",
+      "syntax": "Get-Process",
+      "aliases": ["gps", "ps"],
+      "keywords": ["processes", "running programs", "pid", "task manager"],
+      "tasks": ["see running applications", "what programs are running", "find a process id"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Columns: Handles, NPM(K), PM(K), WS(K), CPU(s), Id, SI, ProcessName." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-Process" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-process?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.top-cpu",
+      "name": "Top 10 processes by CPU",
+      "summary": "Shows the ten processes that have used the most CPU time.",
+      "category": "services",
+      "syntax": "Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 10",
+      "aliases": [],
+      "keywords": ["cpu", "slow computer", "high cpu", "processor usage", "resource hog"],
+      "tasks": ["why is my computer slow", "what is using the cpu"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [
+          { "part": "Sort-Object -Property CPU -Descending", "meaning": "Highest total CPU seconds first." },
+          { "part": "Select-Object -First 10", "meaning": "Keep the first ten." }
+        ],
+        "cautions": ["CPU is total processor time since the process started, not current usage."]
+      },
+      "programs": [
+        { "kind": "cmdlet", "name": "Get-Process" },
+        { "kind": "cmdlet", "name": "Sort-Object", "parameters": ["Property", "Descending"] },
+        { "kind": "cmdlet", "name": "Select-Object", "parameters": ["First"] }
+      ],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/sort-object?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.top-memory",
+      "name": "Top 10 processes by memory",
+      "summary": "Shows the ten processes using the most memory, in megabytes.",
+      "category": "services",
+      "syntax": "Get-Process | Sort-Object -Property WorkingSet64 -Descending | Select-Object -First 10 -Property Name, Id, @{Name = 'MemoryMB'; Expression = { [math]::Round($_.WorkingSet64 / 1MB) }}",
+      "aliases": [],
+      "keywords": ["memory", "ram", "high memory", "slow computer", "resource hog"],
+      "tasks": ["what is using my memory", "why is my computer slow"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [
+          { "part": "WorkingSet64", "meaning": "Physical memory currently used by the process, in bytes." },
+          { "part": "@{Name = 'MemoryMB'; Expression = { … }}", "meaning": "A calculated column converting bytes to megabytes." }
+        ]
+      },
+      "programs": [
+        { "kind": "cmdlet", "name": "Get-Process" },
+        { "kind": "cmdlet", "name": "Sort-Object", "parameters": ["Property", "Descending"] },
+        { "kind": "cmdlet", "name": "Select-Object", "parameters": ["First", "Property"] }
+      ],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/select-object?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.stop-process",
+      "name": "Stop a process by name",
+      "summary": "Ends every running process with the given name.",
+      "category": "services",
+      "syntax": "Stop-Process -Name <Name>",
+      "aliases": ["kill", "spps"],
+      "keywords": ["kill", "end task", "close program", "frozen", "not responding"],
+      "tasks": ["close a frozen program", "kill a process"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [{ "name": "Name", "description": "Process name without .exe, e.g. notepad" }],
+      "details": {
+        "sideEffects": ["Unsaved work in that program is lost."],
+        "cautions": ["Ends every process with that name.", "Processes of other users need administrator rights."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Stop-Process", "parameters": ["Name"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/stop-process?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.get-service",
+      "name": "List services",
+      "summary": "Shows every Windows service and whether it is running or stopped.",
+      "category": "services",
+      "syntax": "Get-Service",
+      "aliases": ["gsv"],
+      "keywords": ["services", "service status"],
+      "tasks": ["see services"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Columns: Status, Name, DisplayName." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-Service" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-service?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.running-services",
+      "name": "List running services",
+      "summary": "Shows only the services that are currently running.",
+      "category": "services",
+      "syntax": "Get-Service | Where-Object -Property Status -EQ -Value Running",
+      "aliases": [],
+      "keywords": ["running services", "active services", "filter"],
+      "tasks": ["see running services"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "Where-Object -Property Status -EQ -Value Running", "meaning": "Keep only objects whose Status equals Running." }]
+      },
+      "programs": [
+        { "kind": "cmdlet", "name": "Get-Service" },
+        { "kind": "cmdlet", "name": "Where-Object", "parameters": ["Property", "EQ", "Value"] }
+      ],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/where-object?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.restart-service",
+      "name": "Restart a service",
+      "summary": "Stops and starts a Windows service, e.g. Spooler to clear stuck print jobs.",
+      "category": "services",
+      "syntax": "Restart-Service -Name <Name>",
+      "aliases": [],
+      "keywords": ["restart service", "printer stuck", "print spooler", "service not responding"],
+      "tasks": ["restart a service", "fix stuck printer"],
+      "requiresAdmin": true,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [{ "name": "Name", "description": "Service name, e.g. Spooler" }],
+      "details": {
+        "sideEffects": ["Features depending on the service are briefly unavailable."],
+        "cautions": ["Dependent services must be restarted too. Add -Force to restart a service that has dependents."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Restart-Service", "parameters": ["Name"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/restart-service?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.get-childitem",
+      "name": "List files and folders",
+      "summary": "Lists the items in the current location (folder, registry key, etc.).",
+      "category": "files",
+      "syntax": "Get-ChildItem",
+      "aliases": ["ls", "dir", "gci"],
+      "keywords": ["list files", "folder contents", "directory listing"],
+      "tasks": ["see what is in this folder", "list files"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Columns: Mode, LastWriteTime, Length, Name." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-ChildItem" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-childitem?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.largest-files",
+      "name": "Find the largest files in Downloads",
+      "summary": "Searches Downloads and its subfolders and lists the 20 biggest files with their size in MB.",
+      "category": "files",
+      "syntax": "Get-ChildItem -Path \"$env:USERPROFILE\\Downloads\" -Recurse -File -ErrorAction SilentlyContinue |\n    Sort-Object -Property Length -Descending |\n    Select-Object -First 20 -Property FullName, @{Name = 'SizeMB'; Expression = { [math]::Round($_.Length / 1MB, 1) }}",
+      "aliases": [],
+      "keywords": ["large files", "big files", "disk space", "free up space", "file size"],
+      "tasks": ["find large files", "free up disk space", "what is taking up space"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "whenToUse": "Freeing up disk space. Change the -Path to search somewhere else.",
+        "syntaxParts": [
+          { "part": "-Recurse -File", "meaning": "Every file under the folder, including subfolders." },
+          { "part": "-ErrorAction SilentlyContinue", "meaning": "Skip folders you can't read instead of printing errors." },
+          { "part": "Sort-Object -Property Length -Descending", "meaning": "Biggest first." },
+          { "part": "Select-Object -First 20 …", "meaning": "Keep 20 results; show the path and size in MB." }
+        ]
+      },
+      "programs": [
+        { "kind": "cmdlet", "name": "Get-ChildItem", "parameters": ["Path", "Recurse", "File", "ErrorAction"] },
+        { "kind": "cmdlet", "name": "Sort-Object", "parameters": ["Property", "Descending"] },
+        { "kind": "cmdlet", "name": "Select-Object", "parameters": ["First", "Property"] }
+      ],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-childitem?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.find-files",
+      "name": "Find files by name",
+      "summary": "Searches the current folder and all subfolders for files matching a pattern.",
+      "category": "files",
+      "syntax": "Get-ChildItem -Path . -Recurse -Filter <Pattern> -ErrorAction SilentlyContinue",
+      "aliases": [],
+      "keywords": ["search", "find file", "locate", "wildcard", "recursive"],
+      "tasks": ["find a file", "search for files by name"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "placeholders": [{ "name": "Pattern", "description": "File name or wildcard, e.g. *.log" }],
+      "details": {
+        "syntaxParts": [
+          { "part": "-Path .", "meaning": "Start in the current folder." },
+          { "part": "-Filter <Pattern>", "meaning": "Fast, file-system-level name filter with * and ? wildcards." }
+        ]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Get-ChildItem", "parameters": ["Path", "Recurse", "Filter", "ErrorAction"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-childitem?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.folder-size",
+      "name": "Show the size of a folder",
+      "summary": "Adds up every file in a folder and its subfolders and prints the total in GB.",
+      "category": "files",
+      "syntax": "'{0:N2} GB' -f ((Get-ChildItem -Path \"<Folder>\" -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB)",
+      "aliases": [],
+      "keywords": ["folder size", "disk usage", "how big", "space used"],
+      "tasks": ["how big is a folder", "find large files", "what is taking up space"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "placeholders": [{ "name": "Folder", "description": "Folder to measure" }],
+      "details": {
+        "syntaxParts": [
+          { "part": "Measure-Object -Property Length -Sum", "meaning": "Total of all file sizes in bytes." },
+          { "part": "'{0:N2} GB' -f …", "meaning": "Format the result with two decimals." }
+        ],
+        "cautions": ["Files in folders you can't read are skipped, so the total may be lower than reality."]
+      },
+      "programs": [
+        { "kind": "cmdlet", "name": "Get-ChildItem", "parameters": ["Path", "Recurse", "File", "ErrorAction"] },
+        { "kind": "cmdlet", "name": "Measure-Object", "parameters": ["Property", "Sum"] }
+      ],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/measure-object?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.remove-item",
+      "name": "Delete a file or empty folder",
+      "summary": "Permanently deletes an item. It does not go to the Recycle Bin.",
+      "category": "files",
+      "syntax": "Remove-Item -Path \"<Path>\"",
+      "aliases": ["rm", "del", "ri"],
+      "keywords": ["delete", "remove file", "erase"],
+      "tasks": ["delete a file"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [{ "name": "Path", "description": "Item to delete" }],
+      "details": {
+        "sideEffects": ["Deleted immediately, not moved to the Recycle Bin."],
+        "cautions": ["Non-empty folders need -Recurse, which deletes everything inside.", "Add -WhatIf first to preview what would be deleted."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Remove-Item", "parameters": ["Path", "Recurse", "WhatIf"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/remove-item?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.ip-configuration",
+      "name": "View IP configuration",
+      "summary": "Shows each connected adapter with its IP address, gateway and DNS servers.",
+      "category": "networking",
+      "syntax": "Get-NetIPConfiguration",
+      "aliases": ["gip"],
+      "keywords": ["ip address", "dns server", "gateway", "adapter", "network settings"],
+      "tasks": ["what is my ip", "check network settings", "fix internet"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Per adapter: InterfaceAlias, IPv4Address, IPv6DefaultGateway, IPv4DefaultGateway, DNSServer." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-NetIPConfiguration" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-netipconfiguration"]
+    },
+    {
+      "id": "ps.test-port",
+      "name": "Test a TCP port on a host",
+      "summary": "Checks whether a host accepts connections on a specific port, e.g. HTTPS on 443.",
+      "category": "networking",
+      "syntax": "Test-NetConnection -ComputerName google.com -Port 443",
+      "aliases": ["tnc"],
+      "keywords": ["port test", "telnet", "firewall test", "connectivity", "reachable"],
+      "tasks": ["is a port open", "check internet connection", "fix internet"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [
+          { "part": "-ComputerName google.com", "meaning": "Host to test. Replace it with any name or IP." },
+          { "part": "-Port 443", "meaning": "TCP port to try. 443 is HTTPS." }
+        ],
+        "expectedOutput": "ComputerName, RemoteAddress, RemotePort, InterfaceAlias, SourceAddress, TcpTestSucceeded (True/False)."
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Test-NetConnection", "parameters": ["ComputerName", "Port"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/nettcpip/test-netconnection"]
+    },
+    {
+      "id": "ps.resolve-dns",
+      "name": "Look up a domain's IP address",
+      "summary": "Resolves a domain name through DNS and shows the records returned.",
+      "category": "networking",
+      "syntax": "Resolve-DnsName -Name google.com",
+      "aliases": [],
+      "keywords": ["dns", "lookup", "resolve", "domain", "nslookup"],
+      "tasks": ["check dns", "what ip does a website have", "fix internet"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Columns: Name, Type, TTL, Section, IPAddress." },
+      "programs": [{ "kind": "cmdlet", "name": "Resolve-DnsName", "parameters": ["Name"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/dnsclient/resolve-dnsname"]
+    },
+    {
+      "id": "ps.clear-dns-cache",
+      "name": "Flush the DNS cache",
+      "summary": "Clears the DNS client cache so names are looked up fresh. PowerShell's equivalent of ipconfig /flushdns.",
+      "category": "networking",
+      "syntax": "Clear-DnsClientCache",
+      "aliases": [],
+      "keywords": ["dns", "cache", "clear dns", "reset dns", "website not loading"],
+      "tasks": ["flush dns", "fix internet", "website not loading", "clear dns cache"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": true,
+      "details": {
+        "expectedOutput": "No output on success.",
+        "sideEffects": ["The cache refills automatically as you browse."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Clear-DnsClientCache" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/dnsclient/clear-dnsclientcache"]
+    },
+    {
+      "id": "ps.listening-ports",
+      "name": "List listening ports",
+      "summary": "Shows which TCP ports are open for incoming connections and the process ID behind each.",
+      "category": "networking",
+      "syntax": "Get-NetTCPConnection -State Listen | Sort-Object -Property LocalPort | Select-Object -Property LocalAddress, LocalPort, OwningProcess",
+      "aliases": [],
+      "keywords": ["open ports", "listening", "ports", "tcp", "pid"],
+      "tasks": ["see open ports", "which program is using a port"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "OwningProcess", "meaning": "Process ID. Look it up with Get-Process -Id <number>." }]
+      },
+      "programs": [
+        { "kind": "cmdlet", "name": "Get-NetTCPConnection", "parameters": ["State"] },
+        { "kind": "cmdlet", "name": "Sort-Object", "parameters": ["Property"] },
+        { "kind": "cmdlet", "name": "Select-Object", "parameters": ["Property"] }
+      ],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-nettcpconnection"]
+    },
+    {
+      "id": "ps.system-errors",
+      "name": "Show recent system errors",
+      "summary": "Lists the 20 most recent errors from the Windows System event log.",
+      "category": "troubleshooting",
+      "syntax": "Get-WinEvent -FilterHashtable @{ LogName = 'System'; Level = 2 } -MaxEvents 20",
+      "aliases": [],
+      "keywords": ["event log", "errors", "event viewer", "crash", "logs"],
+      "tasks": ["why did my pc crash", "see recent errors", "check event log"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [
+          { "part": "LogName = 'System'", "meaning": "The System log (drivers, services, hardware)." },
+          { "part": "Level = 2", "meaning": "Errors only (1 = Critical, 3 = Warning)." }
+        ],
+        "expectedOutput": "Columns: TimeCreated, Id, LevelDisplayName, Message.",
+        "cautions": ["The Security log needs administrator rights; System and Application do not."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Get-WinEvent", "parameters": ["FilterHashtable", "MaxEvents"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.diagnostics/get-winevent?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.admin-members",
+      "name": "List administrators",
+      "summary": "Shows which accounts belong to the local Administrators group.",
+      "category": "administration",
+      "syntax": "Get-LocalGroupMember -Group Administrators",
+      "aliases": [],
+      "keywords": ["administrators", "admin accounts", "group members"],
+      "tasks": ["who are the administrators"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Columns: ObjectClass, Name, PrincipalSource." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-LocalGroupMember", "parameters": ["Group"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.localaccounts/get-localgroupmember?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.disks",
+      "name": "List physical disks",
+      "summary": "Shows each disk with its model, size, health and partition style.",
+      "category": "administration",
+      "syntax": "Get-Disk",
+      "aliases": [],
+      "keywords": ["disks", "ssd", "hard drive", "drive health", "partition style"],
+      "tasks": ["what disks do i have"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Columns: Number, Friendly Name, Serial Number, HealthStatus, OperationalStatus, Total Size, Partition Style." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-Disk" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/storage/get-disk"]
+    },
+    {
+      "id": "ps.format-volume",
+      "name": "Format a volume",
+      "summary": "Erases a volume and creates a new NTFS file system on it.",
+      "category": "administration",
+      "syntax": "Format-Volume -DriveLetter <Letter> -FileSystem NTFS",
+      "aliases": [],
+      "keywords": ["format", "erase drive", "wipe", "file system"],
+      "tasks": ["format a usb drive", "erase a drive"],
+      "requiresAdmin": true,
+      "risk": "L3",
+      "modifies": true,
+      "placeholders": [{ "name": "Letter", "description": "Drive letter to format, e.g. E" }],
+      "details": {
+        "sideEffects": ["Every file on the volume becomes inaccessible."],
+        "cautions": ["Irreversible for practical purposes. Double-check the drive letter."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Format-Volume", "parameters": ["DriveLetter", "FileSystem"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/storage/format-volume"]
+    },
+    {
+      "id": "ps.defender-status",
+      "name": "Show Microsoft Defender status",
+      "summary": "Reports whether antivirus and real-time protection are on and how current the definitions are.",
+      "category": "security",
+      "syntax": "Get-MpComputerStatus",
+      "aliases": [],
+      "keywords": ["defender", "antivirus", "real-time protection", "virus definitions", "security status"],
+      "tasks": ["is antivirus on", "check defender"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "Properties such as AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled, AntivirusSignatureLastUpdated.",
+        "cautions": ["If another antivirus product is active, Defender reports as passive or disabled. That is expected."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Get-MpComputerStatus" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/defender/get-mpcomputerstatus"]
+    },
+    {
+      "id": "ps.firewall-profiles",
+      "name": "Show firewall status",
+      "summary": "Shows whether Windows Firewall is enabled for the domain, private and public profiles.",
+      "category": "security",
+      "syntax": "Get-NetFirewallProfile",
+      "aliases": [],
+      "keywords": ["firewall", "firewall status", "profiles"],
+      "tasks": ["is the firewall on"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "One block per profile with Name, Enabled, DefaultInboundAction, DefaultOutboundAction and logging settings." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-NetFirewallProfile" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/netsecurity/get-netfirewallprofile"]
+    },
+    {
+      "id": "ps.file-hash",
+      "name": "Compute a file's hash",
+      "summary": "Calculates the SHA-256 hash of a file, to verify a download or compare files.",
+      "category": "security",
+      "syntax": "Get-FileHash -Path \"<File>\" -Algorithm SHA256",
+      "aliases": [],
+      "keywords": ["hash", "checksum", "sha256", "verify download", "integrity"],
+      "tasks": ["verify a download", "check file checksum"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "placeholders": [{ "name": "File", "description": "File to hash" }],
+      "details": { "expectedOutput": "Algorithm, Hash (hex) and Path. Compare Hash with the publisher's checksum." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-FileHash", "parameters": ["Path", "Algorithm"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/get-filehash?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.hotfixes",
+      "name": "List installed updates",
+      "summary": "Shows Windows updates (hotfixes) installed on this computer and when.",
+      "category": "security",
+      "syntax": "Get-HotFix",
+      "aliases": [],
+      "keywords": ["updates", "patches", "hotfix", "kb", "windows update"],
+      "tasks": ["which updates are installed", "is windows up to date"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "Columns: Source, Description, HotFixID, InstalledBy, InstalledOn.",
+        "cautions": ["Lists Windows component updates only, not app or driver updates."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Get-HotFix" }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-hotfix?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.execution-policy-list",
+      "name": "Show script execution policies",
+      "summary": "Shows the PowerShell execution policy at every scope, which decides whether scripts may run.",
+      "category": "windows-config",
+      "syntax": "Get-ExecutionPolicy -List",
+      "aliases": [],
+      "keywords": ["execution policy", "scripts disabled", "running scripts", "ps1"],
+      "tasks": ["why can't i run scripts", "check execution policy"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Scopes MachinePolicy, UserPolicy, Process, CurrentUser, LocalMachine with their policy. The first one that isn't Undefined wins." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-ExecutionPolicy", "parameters": ["List"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/get-executionpolicy?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.execution-policy-user",
+      "name": "Allow local scripts for my account",
+      "summary": "Sets your account's policy to RemoteSigned: your own scripts run, and downloaded ones must be signed.",
+      "category": "windows-config",
+      "syntax": "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser",
+      "aliases": [],
+      "keywords": ["execution policy", "enable scripts", "running scripts is disabled", "remotesigned"],
+      "tasks": ["allow running scripts", "running scripts is disabled on this system"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "details": {
+        "syntaxParts": [
+          { "part": "RemoteSigned", "meaning": "Local scripts run; scripts from the internet need a trusted signature." },
+          { "part": "-Scope CurrentUser", "meaning": "Only your account. No administrator rights needed." }
+        ],
+        "sideEffects": ["Changes a security setting for your account."],
+        "cautions": ["A Group Policy setting overrides this if one is configured."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Set-ExecutionPolicy", "parameters": ["ExecutionPolicy", "Scope"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-executionpolicy?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.installed-apps",
+      "name": "List installed programs",
+      "summary": "Lists programs registered as installed for all users, with version and publisher.",
+      "category": "windows-config",
+      "syntax": "Get-ItemProperty -Path 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' | Select-Object -Property DisplayName, DisplayVersion, Publisher",
+      "aliases": [],
+      "keywords": ["installed programs", "installed apps", "software list", "uninstall"],
+      "tasks": ["what programs are installed"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "HKLM:\\…\\Uninstall\\*", "meaning": "Registry keys where 64-bit programs register for Apps & features." }],
+        "cautions": [
+          "32-bit programs are under HKLM:\\Software\\WOW6432Node\\…\\Uninstall, and per-user installs under HKCU:. This command doesn't include them.",
+          "Some entries are updates or components and have no DisplayName."
+        ]
+      },
+      "programs": [
+        { "kind": "cmdlet", "name": "Get-ItemProperty", "parameters": ["Path"] },
+        { "kind": "cmdlet", "name": "Select-Object", "parameters": ["Property"] }
+      ],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/get-itemproperty?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.help-examples",
+      "name": "Show examples for a command",
+      "summary": "Displays usage examples from a cmdlet's help.",
+      "category": "automation",
+      "syntax": "Get-Help -Name <Command> -Examples",
+      "aliases": ["help", "man"],
+      "keywords": ["help", "examples", "documentation", "how to use"],
+      "tasks": ["how do i use a command"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "placeholders": [{ "name": "Command", "description": "Cmdlet name, e.g. Get-Process" }],
+      "details": {
+        "cautions": ["Windows PowerShell ships with minimal help. Run Update-Help (as administrator) for full examples, or add -Online to open the docs."]
+      },
+      "programs": [{ "kind": "cmdlet", "name": "Get-Help", "parameters": ["Name", "Examples"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/get-help?view=powershell-5.1"]
+    },
+    {
+      "id": "ps.find-command",
+      "name": "Find a command by keyword",
+      "summary": "Lists cmdlets, functions and programs whose names contain a word.",
+      "category": "automation",
+      "syntax": "Get-Command -Name *<Keyword>*",
+      "aliases": ["gcm"],
+      "keywords": ["discover commands", "search cmdlets", "which command"],
+      "tasks": ["find a powershell command"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "placeholders": [{ "name": "Keyword", "description": "Part of a command name, e.g. dns" }],
+      "details": { "expectedOutput": "Columns: CommandType, Name, Version, Source." },
+      "programs": [{ "kind": "cmdlet", "name": "Get-Command", "parameters": ["Name"] }],
+      "sources": ["https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/get-command?view=powershell-5.1"]
+    }
+  ]
+}

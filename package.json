@@ -1,7 +1,7 @@
 {
   "name": "commanddeck",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A Windows desktop controller for CMD and PowerShell.",
   "author": "Cedrick Kaneko",
   "type": "module",

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "commanddeck/catalog.schema.json",
+  "title": "CommandDeck built-in catalog file",
+  "description": "Editor aid. The authoritative validation is in src-tauri/src/catalog/mod.rs (load_builtin + tests) and scripts/verify-catalog.ps1.",
+  "type": "object",
+  "required": ["version", "shell", "commands"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "shell": { "enum": ["cmd", "powershell"] },
+    "commands": { "type": "array", "items": { "$ref": "#/$defs/command" } }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1 },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "summary", "category", "syntax", "requiresAdmin", "risk", "modifies", "programs", "sources"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(cmd|ps)\\.[a-z0-9][a-z0-9.-]*$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "category": {
+          "enum": ["networking", "files", "system-info", "processes", "services", "troubleshooting", "disk", "administration", "security", "environment", "windows-config", "automation"]
+        },
+        "syntax": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "aliases": { "type": "array", "maxItems": 30, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9 ._-]{0,39}$" } },
+        "keywords": { "type": "array", "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 60 } },
+        "tasks": { "type": "array", "maxItems": 30, "items": { "type": "string", "minLength": 1, "maxLength": 60 } },
+        "requiresAdmin": { "type": "boolean" },
+        "risk": { "enum": ["L1", "L2", "L3"] },
+        "modifies": { "type": "boolean" },
+        "placeholders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "description"],
+            "properties": { "name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*$" }, "description": { "$ref": "#/$defs/text" } }
+          }
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "whenToUse": { "$ref": "#/$defs/text" },
+            "syntaxParts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["part", "meaning"],
+                "properties": { "part": { "$ref": "#/$defs/text" }, "meaning": { "$ref": "#/$defs/text" } }
+              }
+            },
+            "expectedOutput": { "$ref": "#/$defs/text" },
+            "sideEffects": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+            "cautions": { "type": "array", "items": { "$ref": "#/$defs/text" } }
+          }
+        },
+        "programs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["kind", "name"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "enum": ["exe", "cmd-builtin", "cmdlet"] },
+              "name": { "$ref": "#/$defs/text" },
+              "flags": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+              "parameters": { "type": "array", "items": { "$ref": "#/$defs/text" } }
+            }
+          }
+        },
+        "sources": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^https://learn\\.microsoft\\.com/" } }
+      }
+    }
+  }
+}

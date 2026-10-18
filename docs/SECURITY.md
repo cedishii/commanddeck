@@ -1,6 +1,6 @@
 # CommandDeck Security Model
 
-Status: **Accepted policy, not yet implemented** (owner decisions recorded 2026-10-18).
+Status: **Accepted policy.** Data-layer protections are implemented (§10a). Execution and authorization (§3–§8) come in Phases 3–4.
 
 ## 1. Principles
 
@@ -124,6 +124,18 @@ Free-form custom scripts can't be fully analyzed. They are labeled "script / mul
 - Not stored by default: terminal output; raw terminal keystrokes.
 - Redaction before storage: values of params marked `secret`, and patterns such as `-Password`, `-Credential`, `ConvertTo-SecureString`, `/p:`, `password=`, bearer tokens, connection strings.
 - Retention setting (off / 7 / 30 / 90 days / forever), one-click clear.
+
+## 10a. Implemented in Phase 2 (verified)
+
+- **Backend owns all data.** The webview has no SQL, fs, shell or http access; capabilities are `core:default` only.
+- **Strict input shapes.** Every IPC input is a typed struct with `deny_unknown_fields`, so a smuggled field (e.g. `{ theme, elevate: true }`) is rejected by the backend. Verified end-to-end in the real app.
+- **Validation in Rust, not the form.** Lengths, control characters, per-shell categories, placeholder consistency (`<Name>` declared ↔ used), alias syntax and alias uniqueness per shell, L2/L3 ⇒ modifies, 10/15 limit, the Home limit, and changing a custom command's shell (refused, because it would reinterpret the syntax in another language).
+- **Custom commands are untrusted.** Their `risk` is the user's declaration and is shown as such. They carry `source: "custom"` so future execution (Phase 3/4) analyzes them itself and never relies on the label. Chaining, pipes, multiple lines and script calls are labeled **Multi-step** (heuristic, informational).
+- **Import** is all-or-nothing, capped at 1 MB and 500 commands, rejects unknown fields, and validates every entry before writing.
+- **External links.** The webview can only ask to open source *n* of built-in command *id*. The URL comes from the embedded catalog (all `https://learn.microsoft.com/`), so the UI can't open arbitrary URLs or programs through this path.
+- **Resilience.** A damaged database is moved aside (kept, not deleted) and the user is told. A database from a newer version is refused untouched. Malformed settings fall back to defaults, and unreadable custom rows are skipped.
+- **Test isolation.** `COMMANDDECK_DATA_DIR` exists only in debug builds (`cfg!(debug_assertions)`), so a release install can't be redirected by an environment variable.
+- **History** stores only command ids for copies (no output, no free text), capped at 20, with a "Clear recent commands" control.
 
 ## 11. Known limitations
 

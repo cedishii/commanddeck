@@ -9,6 +9,8 @@ interface SyntaxPreviewProps {
   readonly label: string;
   /** `preview`: one line with expand chevron. `full`: always the full text, no chevron (details panel). */
   readonly variant?: 'preview' | 'full';
+  /** Called after a successful copy (e.g. to record recent use). */
+  readonly onCopied?: () => void;
 }
 
 /** Tokens up to this length never break internally; longer ones may break anywhere. */
@@ -39,7 +41,7 @@ const iconButton =
  * Truncation is purely visual (CSS ellipsis on the full text), so the DOM,
  * the copied value and later the executed value are always the full syntax.
  */
-export function SyntaxPreview({ syntax, label, variant = 'preview' }: SyntaxPreviewProps) {
+export function SyntaxPreview({ syntax, label, variant = 'preview', onCopied }: SyntaxPreviewProps) {
   const full = variant === 'full';
   const [toggled, setExpanded] = useState(false);
   const expanded = full || toggled;
@@ -95,7 +97,7 @@ export function SyntaxPreview({ syntax, label, variant = 'preview' }: SyntaxPrev
         className={iconButton}
         aria-label={`Copy command for ${label}`}
         title="Copy command"
-        onClick={() => { copy(syntax); }}
+        onClick={() => { copy(syntax, onCopied); }}
       >
         {status === 'copied' ? <Check aria-hidden size={15} /> : status === 'failed' ? <X aria-hidden size={15} className="text-danger" /> : <Copy aria-hidden size={15} />}
       </button>

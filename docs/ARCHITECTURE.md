@@ -1,6 +1,6 @@
 # CommandDeck Architecture
 
-Status: **Accepted design, not yet implemented** (owner decisions recorded 2026-10-18).
+Status: **Phases 1–2 implemented** (UI shell, catalog, search, persistence). Terminal, execution and security sections remain design (owner decisions recorded 2026-10-18).
 
 ## 1. Overview
 
@@ -59,20 +59,53 @@ Bridging actions:
 - `ipc/` — the **only** place that imports `@tauri-apps/api/core`. Exposes typed functions (`catalog.search()`, `exec.run()`, `pty.open()`…) returning discriminated-union results. Makes the frontend mockable in tests and in browser-only dev mode.
 - `components/CommandRow` — `[#] [Description] [Risk/Admin badge] [Syntax preview ⌄] [Action]`.
 - `components/SyntaxPreview` — single-line truncated preview with chevron; expanded shows full text with `white-space: pre-wrap`, copy button. Preview text is derived for display only; execute/copy always use the definition's canonical value.
-- `components/DetailPanel` — explanation, syntax breakdown, examples, side effects, admin/risk, expected output.
-- `components/TerminalView` — xterm.js + fit addon; streams bytes from a Tauri `Channel`.
-- `features/search` — Ctrl+K palette; queries the backend index (single source of truth).
+- `components/DetailPanel` — loads the command by id. Shows the explanation, syntax breakdown, placeholders, side effects, admin/risk, expected output, personal aliases, documentation links, and edit/delete for custom commands.
+- `components/SearchPalette` — Ctrl+K combobox + listbox. It queries the backend search (single source of truth). Empty query shows Recent + Favorites. Modes: browse (Enter = details) and addToHome (Enter = add).
+- `components/CustomCommandEditor` — form only. The backend validates and returns per-field messages.
+- `app/App.tsx` + `app/context.tsx` — the overlays (details, search, editor, toasts), a `revision` counter that triggers refetches after mutations, and a startup notice/fatal error screen.
+- `components/TerminalView` — (Phase 3) xterm.js + fit addon; streams bytes from a Tauri `Channel`.
 
 ### 3.2 Backend (`src-tauri/src/`)
 
-- `catalog/` — `CommandDefinition` (serde), validation (ids unique, shell valid, params well-formed, risk present), search index (see §5).
+- `catalog/` ✓ — `Command` type, embedded JSON loading with `deny_unknown_fields`, validation shared by built-in and custom commands, multi-step detection, search (§5).
+- `app.rs` ✓ — application layer combining the catalog with stored data. Every rule lives here (Home limit, alias conflicts, import, recents).
+- `commands.rs` ✓ — thin async Tauri handlers. `Backend` wraps `Result<App, String>` so a startup failure becomes a visible error instead of a crash.
 - `exec/` — spawns `std::process::Command`/`tokio::process` with explicit absolute paths; `CREATE_NO_WINDOW`; streams lines; cancel = terminate **that child's process tree** via a Job Object (never by name).
 - `pty/` — `PtyBackend` trait (`spawn(shell, cwd, size)`, `write`, `resize`, `kill`, `wait`). Sessions keyed by UUID; each in a Job Object with `KILL_ON_JOB_CLOSE` so closing CommandDeck cleans up children.
 - `security/` — `RiskAnalyzer` (per-definition rules + argument/target evaluation), `Policy` (user settings: which L2/L3 need confirm/password), `GrantStore` (short-lived single-use authorization tokens bound to a hash of the exact invocation).
 - `platform/` — `is_elevated()` via `GetTokenInformation(TokenElevation)`; shell discovery (`%SystemRoot%\System32\cmd.exe`, `…\WindowsPowerShell\v1.0\powershell.exe`, `pwsh.exe` from known install paths/registry); path canonicalization for protected-path checks.
-- `store/` — migrations, repositories. DB at `%APPDATA%\CommandDeck\commanddeck.db` (exact path via Tauri `app_data_dir`).
+- `store/` ✓ — SQLite (§5a). DB at `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db` (Tauri `app_data_dir`).
 
-## 4. Catalog definition (draft schema)
+## 4. Catalog
+
+### 4.1 As built (Phase 2)
+
+`catalog/cmd.json` and `catalog/powershell.json` (shell is per file) are compiled into the binary with `include_str!` and validated on every start and in tests. An entry:
+
+```jsonc
+{
+  "id": "cmd.ipconfig.flushdns",          // cmd.* / ps.*, unique
+  "name": "Flush the DNS cache",
+  "summary": "Clears the list of recently looked-up website addresses…",
+  "category": "networking",               // per-shell category list
+  "syntax": "ipconfig /flushdns",         // canonical text, verbatim (newlines allowed)
+  "aliases": ["flushdns"],                // unique per shell
+  "keywords": ["dns", "cache", …],
+  "tasks": ["flush dns", "fix internet"], // plain-language phrases for search
+  "requiresAdmin": false,                 // verified (see D20)
+  "risk": "L1", "modifies": true,
+  "placeholders": [],                     // every <Name> in syntax must be described
+  "details": { "whenToUse": "…", "syntaxParts": [...], "expectedOutput": "…", "sideEffects": [...], "cautions": [...] },
+  "programs": [{ "kind": "exe", "name": "ipconfig.exe", "flags": ["/flushdns"] }],  // how verify-catalog.ps1 checks it
+  "sources": ["https://learn.microsoft.com/…/ipconfig"]
+}
+```
+
+`programs` kinds: `exe` (exists in System32; flags appear in `/?` help), `cmd-builtin` (`help <name>` knows it; flags in help), `cmdlet` (`Get-Command` finds it; parameters exist). `scripts/verify-catalog.ps1` runs these checks plus HTTP 200 for every source. Doc page titles were also reviewed by hand.
+
+### 4.2 Execution model (planned for Phase 3, not yet built)
+
+`programs` exists for verification and doesn't decide how anything runs. In Phase 3 each entry gains an explicit `invocation`:
 
 ```jsonc
 {
@@ -109,17 +142,39 @@ Invocation kinds:
 
 Every entry lists `sources` used to verify its syntax. No entry ships without verification.
 
-## 5. Search
+## 5. Search (as built: `src-tauri/src/catalog/search.rs`)
 
-Local, in-memory index in Rust, built at startup from built-in + custom entries. Scoring (tuned with tests):
+Computed per query over built-in + custom commands + personal aliases. There are ~70 entries, so no persistent index is needed.
 
-1. Exact name/alias/`display` match
-2. Prefix match on alias/command token
-3. Keyword & task-phrase match (curated `keywords` + `tasks` like "fix internet")
-4. Token overlap on summary, weighted by field, with a small stop-word list so generic words ("show", "file") don't flood results
-5. Category boost when a query names a category
+1. **Tokens**: lowercase. `-`, `/`, `.` are kept inside tokens, so `get-process` and `/flushdns` survive, and their parts are indexed too. Light stemming: processes→process, running→run, directories→directory. Stop words are dropped: "the", "my", "how", "see", "show"…
+2. **Field weights**: alias 6, syntax 4, name 3, keywords 3, tasks 3, summary 1, category 1. Exact token = 1.0, prefix (≥3 chars) = 0.7.
+3. **IDF**: rare words count more, so generic words don't flood results.
+4. **Synonyms** at 0.6 weight for everyday words: internet→network/dns/connectivity, app→process, kill→stop, large→largest/size, wifi→wlan, …
+5. **Coverage**: score × (0.4 + 0.6 × fraction of query words matched). Multi-word queries matching under half of the words are heavily penalized.
+6. **Phrase bonuses** on whole-word boundaries: exact alias +40, exact syntax +50, syntax prefix +15, exact task phrase +14, partial task +7, exact keyword +10, name contains query +8.
+7. Minimum score 2.0. Ties keep catalog order.
 
-Results carry `shell`, so the UI groups/labels CMD vs PowerShell. A relevance test suite (`query → expected top-N ids`) guards regressions. Fuzzy (typo-tolerant) matching added only if the tests show a need.
+Guarded by relevance tests ("flush dns", "fix internet", "find large files", "see running applications", exact names/syntax, shell filter, generic-word noise, the "ip"-in-"script" regression). There's no typo tolerance yet.
+
+## 5a. Persistence (as built: `src-tauri/src/store/mod.rs`)
+
+| Table | Purpose |
+|---|---|
+| `settings(key, value)` | `theme`, `quickActionLimit` (10/15), `seeded`. Malformed values fall back to defaults |
+| `quick_actions(command_id, position, label, note)` | Home order + display-only label/note. Positions are kept contiguous |
+| `favorites(command_id, created_at)` | Starred commands |
+| `recents(command_id, used_at)` | Last 20 copied commands |
+| `custom_commands(id, data JSON, created_at, updated_at)` | User commands. Unparseable rows are skipped, not fatal |
+| `user_aliases(shell, alias, command_id)` | Personal aliases, unique per shell |
+
+- Migrations run in order by `PRAGMA user_version`, each in a transaction, with WAL mode on.
+- On open, `quick_check` runs. A damaged file is renamed `commanddeck.corrupt-<ms>.db` and a fresh database is created, and the UI shows a notice with the backup path.
+- A database from a **newer** app version is refused untouched, with a clear message.
+- References to commands that no longer exist are pruned at startup.
+
+## 5b. IPC surface (as built)
+
+`app_startup`, `catalog_list/get/search/open_source`, `home_get/add/remove/move/update`, `settings_get/update/reset`, `favorite_set`, `recent_record`, `recents_get/clear`, `aliases_set`, `custom_create/update/delete/export/import`. All are async. Inputs are typed serde structs with `deny_unknown_fields`, and errors serialize as `{ kind, message, fields? }`.
 
 ## 6. Terminal integration
 
@@ -187,5 +242,14 @@ Hard constraint: a Medium-integrity process cannot create an elevated child atta
 | eslint, @eslint/js, typescript-eslint, eslint-plugin-react-hooks, globals | Linting (type-aware strict) |
 | @tauri-apps/cli | Build, dev and icon tooling |
 | Rust: tauri 2, serde, serde_json | Window host. `tauri-plugin-log` from the template was removed as unneeded for now |
+
+### Dependencies (Phase 2)
+
+| Package | Why |
+|---|---|
+| rusqlite 0.40 (`bundled`) | SQLite with no system dependency. Backend-only access (D4) |
+| thiserror 2 | Typed `AppError` |
+| tauri-plugin-opener 2.7 | Opens catalog documentation in the default browser. Called **only from Rust** with URLs taken from the built-in catalog; no webview permission granted |
+| tempfile 3 (dev) | Disposable folders for database tests |
 
 Dependencies are added to these tables as they're introduced, with reason.

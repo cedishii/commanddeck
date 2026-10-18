@@ -49,44 +49,52 @@ D1–D7, D9 and D13 were proposed in Phase 0 and accepted on 2026-10-18 when the
 | D14 | **Terminal & Advanced Mode policy** (full text: `docs/SECURITY.md` §6): direct terminal input behaves like a normal Windows terminal and is not screened; the command bar does structural (not keyword-only) detection of well-known high-impact operations and shows **one** concise confirmation only when genuinely warranted; nothing is ever rewritten or blocked by a filter; admin ≠ dangerous. Advanced Mode = broad freedom (free-form commands, custom scripts, no medium-risk confirmations) while keeping proportionate safeguards for catastrophic operations the app can **reliably** identify. Never promise perfect detection | ✅ 2026-10-18 |
 | D15 | **Toolchain policy:** inspect before installing; never reinstall what exists; show what's missing, the proposed install, disk space and whether admin is needed; ask before system-wide installs or any UAC prompt; prefer user-level Rust (rustup) | ✅ 2026-10-18 |
 | D16 | Brand logo provided by owner: `assets/brand/commanddeck-logo.png` (1254×1254, no alpha channel). Source for app/installer icons via `tauri icon` | ✅ 2026-10-18 |
+| D20 | Catalog verification = automated checks against the real Windows install (program/cmdlet/parameter/flag existence) + doc URLs resolving + admin probes of harmless read-only commands | ✅ 2026-10-18 (Phase 2) |
+| D21 | Personal labels on Home are display-only; personal aliases only affect search | ✅ 2026-10-18 (Phase 2) |
+| D22 | First run seeds 8 quick actions (of 10) so adding works immediately | ✅ 2026-10-18 (Phase 2) |
 
 ## 4. Open questions (do not decide unilaterally)
 
 - **Logo transparency** — the supplied PNG has the dark background baked in (no alpha). Fine for the window icon; a transparent-corner version would look cleaner on the taskbar. Ask the owner before altering their artwork.
 
-## 5. Tech stack & repository layout (planned)
+## 5. Tech stack & repository layout
+
+Existing (✓) and planned (later phase):
 
 ```
 commanddeck/
   CLAUDE.md  README.md  CHANGELOG.md
-  assets/brand/    owner-supplied logo (source for generated icons — do not edit without asking)
-  docs/            ARCHITECTURE.md SECURITY.md ROADMAP.md TESTING.md
-  catalog/         built-in command definitions (JSON) + schema
-    schema/command.schema.json
-    cmd/*.json  powershell/*.json
-  src/             React frontend (presentation only)
-    app/           shell, routing, providers, global shortcuts
-    pages/         Home, Cmd, PowerShell, Settings
-    components/    CommandRow, SyntaxPreview, DetailPanel, TerminalView, ui/*
-    features/      search, quickActions, customCommands, settings (UI state + hooks)
-    ipc/           the ONLY module that calls Tauri `invoke`; typed wrappers
-    styles/        tokens.css (design tokens), global.css
-  src-tauri/       Rust backend
-    src/
-      commands/    #[tauri::command] handlers — thin, validate & delegate
-      catalog/     load, validate, search index
-      exec/        structured one-off execution (argv), output streaming
-      pty/         PtyBackend trait, ConPTY session manager
-      security/    risk classification, policy, authorization tokens, auth (argon2)
-      platform/    privilege detection, shell discovery, path resolution
-      store/       SQLite migrations & repositories
-    capabilities/  Tauri capability files (minimal permissions)
-  tests/           cross-layer fixtures; e2e/ (later)
+  assets/brand/        ✓ owner-supplied logo (source for generated icons — do not edit without asking)
+  docs/                ✓ ARCHITECTURE.md SECURITY.md ROADMAP.md TESTING.md
+  catalog/             ✓ built-in commands: cmd.json, powershell.json (embedded into the Rust binary)
+    schema/            ✓ catalog.schema.json (editor aid; Rust validation is authoritative)
+  scripts/             ✓ verify-catalog.ps1: checks every entry against Windows + Microsoft docs
+  src/                 React frontend (presentation only)
+    app/               ✓ App shell, context (details/search/editor/toasts/revision), theme, pages
+    pages/             ✓ Home, ShellPage (CMD/PowerShell), Settings
+    components/        ✓ CommandRow, SyntaxPreview, DetailPanel, SearchPalette, CustomCommandEditor, ui/*
+    hooks/             ✓ useAsync, useDialog, useCommandActions, useCopy, useGlobalShortcuts
+    ipc/               ✓ the ONLY module that calls Tauri `invoke`: types.ts, client.ts, api.ts
+    domain/            ✓ labels/categories for presentation
+    styles/            ✓ tokens.css (design tokens), global.css
+    test/              ✓ setup, render helpers, fakeBackend (mockIPC)
+  src-tauri/src/       Rust backend
+    lib.rs             ✓ startup, state, command registration
+    commands.rs        ✓ thin #[tauri::command] handlers (Backend state wraps startup errors)
+    app.rs             ✓ application layer: every rule (limits, validation, aliases, import)
+    error.rs           ✓ AppError → { kind, message, fields? }
+    catalog/           ✓ mod.rs (types, load, validation, multi-step), search.rs (ranking)
+    store/             ✓ SQLite: migrations, settings, Home, favorites, recents, aliases, custom
+    exec/ pty/         Phase 3
+    security/ platform/  Phase 4
+  src-tauri/capabilities/  ✓ core:default only
 ```
 
-Frontend: React 19, TypeScript strict, Vite, Tailwind CSS v4 over CSS-variable tokens, lucide-react icons, @xterm/xterm + addon-fit.
-Backend: Rust stable (MSVC), tauri 2, serde, tokio, rusqlite (bundled), argon2, windows crate, portable-pty.
-Versions are pinned in lockfiles once scaffolded; verify before upgrading.
+Frontend: React 19, TypeScript strict, Vite, Tailwind CSS v4 over CSS-variable tokens, lucide-react icons. Later: @xterm/xterm + addon-fit.
+Backend now: Rust stable (MSVC), tauri 2, tauri-plugin-opener (Rust-side only), serde/serde_json, rusqlite (bundled SQLite), thiserror. Later: windows crate, portable-pty, argon2.
+Versions are pinned in lockfiles; verify before upgrading.
+
+Data lives in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`. **Debug builds only:** set `COMMANDDECK_DATA_DIR` to use a throwaway folder for testing (release builds ignore it).
 
 ## 6. Security boundaries (summary — full detail in docs/SECURITY.md)
 
@@ -99,6 +107,10 @@ Versions are pinned in lockfiles once scaffolded; verify before upgrading.
 - Admin rights only come from the user's explicit "Restart as administrator" through UAC. Admin alone never triggers a warning or password.
 - Never log secrets. Terminal output is not persisted by default.
 - Never test destructive behavior against the real system — use temp dirs, mocks, fixtures.
+- Backend inputs use `deny_unknown_fields`: extra fields from the webview are rejected, not ignored.
+- Custom commands' declared risk is informational; future execution must analyze them itself (`source: "custom"`).
+- Documentation links open only via `catalog_open_source(id, index)`. The webview never passes a URL to open.
+- Testing must not touch the owner's real data: use `COMMANDDECK_DATA_DIR` + `WEBVIEW2_USER_DATA_FOLDER` pointed at scratch folders.
 
 ## 7. Coding conventions
 
@@ -106,9 +118,16 @@ Frontend specifics established in Phase 1:
 - Colors only through tokens in `src/styles/tokens.css` (consumed via Tailwind theme names like `bg-surface`, `text-muted`). `src/styles/tokens.test.ts` enforces WCAG AA contrast, so add new text/background pairs there.
 - Global CSS goes inside `@layer base` so utilities can override it.
 - Command syntax text is rendered verbatim. Truncation is CSS-only, and copy/execute use `entry.syntax`. Never derive executable text from display text.
-- Pages take data loaders as props (`src/data/`) so tests can inject loading/empty/error. Phase 2 swaps the sample loaders for `src/ipc/`.
-- Sample data lives only in `src/fixtures/sample.ts`, ids prefixed `sample.`, and the UI labels it "Sample data".
+- Data comes only from `src/ipc/api.ts`. Loaders are `useCallback(() => api.x(), [revision])` + `useAsync`. After a mutation call `invalidate()` (bumps `revision`), and every view refetches. `useAsync` keeps showing old data while refetching.
+- Dialogs use `useDialog` (initial focus, Tab trap, Esc, focus return). Overflow menus use `ui/Menu`. Never hand-roll focus handling.
+- Errors from the backend are `BackendError` (`kind`, `message`, `fields`); forms show `fieldMessage(name)` next to inputs.
+- Tests: install `installFakeBackend()` (Tauri `mockIPC`) and use `renderApp()` / `renderWithContext()`. The fake mirrors the contract; real rules are tested in Rust. Scope queries (`within(...)`) because overlays render over pages.
 - Absolutely positioned helpers (e.g. `sr-only` live regions) need a `relative` ancestor; otherwise they stretch the document and shift the app shell.
+
+Catalog rules (built-in entries):
+- Every entry needs `programs` (how to verify it) and `sources` (Microsoft Learn). Run `scripts/verify-catalog.ps1` after any catalog change; it must pass.
+- Admin requirements are verified on a standard-user session where the command is read-only and harmless. Otherwise they come from documentation. Never guess.
+- Keep `tasks` as natural phrases people type ("fix internet"); add relevance tests in `catalog/search.rs` for new important queries.
 
 - TypeScript `strict: true`, no `any` without a comment explaining why. Prefer discriminated unions for IPC results.
 - Rust: `thiserror` for error enums, no `unwrap()`/`expect()` in non-test code paths that handle user input or OS calls. `cargo clippy -- -D warnings` clean.
@@ -134,6 +153,9 @@ All run from the repo root. In terminals opened before Rust was installed, prefi
 | Rust lint | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` |
 | Rust tests | `cargo test --manifest-path src-tauri/Cargo.toml` |
 | Production build + installers | `npm run tauri build` → `src-tauri/target/release/bundle/{nsis,msi}/` |
+| Verify catalog against Windows + docs | `powershell -NoProfile -File scripts/verify-catalog.ps1` (`-SkipNetwork` to skip URL checks) |
+| Print search rankings (tuning aid) | `cargo test --manifest-path src-tauri/Cargo.toml print_rankings -- --ignored --nocapture` |
+| Isolated dev run for e2e (debug only) | set `COMMANDDECK_DATA_DIR`, `WEBVIEW2_USER_DATA_FOLDER` to scratch dirs and `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223`, then `npm run tauri dev`; drive via Chrome DevTools Protocol (see TESTING.md) |
 | Regenerate icons from the logo | `npx tauri icon assets/brand/commanddeck-logo.png`, then delete the generated `android/`, `ios/` and `icon.icns` (Windows-only app) |
 
 ## 8a. Pinned / notable versions
@@ -150,17 +172,21 @@ A phase is complete only when its acceptance criteria are **verified** (tests ru
 ## 10. Current status
 
 - **Phase 0 complete (2026-10-18).** Docs written, owner decisions recorded (D8, D14–D16), toolchain installed with owner approval and verified.
-- **Phase 1 complete and verified 2026-10-18** (ROADMAP.md table, TESTING.md). All UI data is `SAMPLE` fixtures. No execution, search, persistence, terminal or privilege detection yet.
-- v0.1.0 is installed per-user on the owner's PC (`%LOCALAPPDATA%\CommandDeck`; uninstall via Apps & Features).
-- Local git only, no remote. First commit made at the end of Phase 1 with owner approval.
-- **Next: Phase 2** (catalog JSON + schema in Rust, verified starter entries, search, favorites/Home 10/15, custom entries, SQLite). Start with a short plan and confirm with the owner.
+- **Phase 1 complete and verified 2026-10-18.**
+- **Phase 2 complete and verified 2026-10-18** (ROADMAP.md table, TESTING.md): 69 verified built-in commands, Rust search, SQLite persistence, Home management, favorites, recents, personal aliases, custom commands with import/export, Ctrl+K palette. Version 0.2.0.
+- v0.1.0 is installed per-user on the owner's PC (`%LOCALAPPDATA%\CommandDeck`). 0.2.0 installers are built but **not installed**. Ask before upgrading the owner's install.
+- Still not implemented: running commands (Run is disabled), terminal sessions, privilege detection, authorization.
+- Local git only, no remote. Commit only with owner approval.
+- **Next: Phase 3** (native terminal: PTY spike → ConPTY sessions, xterm.js, one-off structured runner). Start with a short plan and confirm with the owner.
 - Environment (verified 2026-10-18): Windows 11 build 26300 x64, Node 24.20.0, npm 11.19.0, git 2.55, WebView2 155, Windows PowerShell 5.1, **VS 2022 Build Tools 17.14.42** (`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`, VC x64 tools), **Windows SDK 10.0.26100.0**, **rustup 1.29.1 / rustc + cargo 1.99.1 stable-x86_64-pc-windows-msvc** (user-level, `%USERPROFILE%\.cargo\bin` on user PATH; clippy and rustfmt included). Not installed: PowerShell 7 (optional).
 - Terminals opened before the Rust install won't have cargo on PATH. Open a new terminal or VS Code window.
 
 ## 11. Known issues / limitations
 
-- Phase 1 unverified items: MSI install, clipboard copy inside native WebView2, manual Tab-order pass in the native window, live OS theme switch.
-- Rust has no tests yet (no backend logic until Phase 2).
+- Unverified: MSI install, manual Tab-order pass in the native window by a human, live OS theme switch while running.
+- Search has no typo tolerance (e.g. "ipconfg" finds nothing). Add only if relevance tests show a need.
+- Multi-step detection for custom commands is heuristic and informational (labels, never blocks).
+- Two CommandDeck instances with different WebView2 arguments can't share a profile folder (WebView2 0x8007139F). Isolate test instances with `WEBVIEW2_USER_DATA_FOLDER`.
 - Programmatic `MoveWindow`/`SetWindowPos` bypasses min size (normal Windows behavior). Verify min size via `WM_GETMINMAXINFO`, not by moving the window.
 
 - `portable-pty` latest release is 0.9.0 (Feb 2025); maintenance risk — mitigated by the `PtyBackend` trait.

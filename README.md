@@ -2,7 +2,7 @@
 
 A Windows desktop controller for CMD and PowerShell.
 
-> **Status:** Phase 1 (desktop foundation). The app opens, navigates and displays **sample** commands. Searching, saving quick actions and running commands come in later phases.
+> **Status:** 0.2.0 (Phase 2). The command library, search, Home quick actions, favorites and custom commands work and are saved locally. **Running commands and live terminal sessions come in Phase 3.** Until then, copy a command and paste it into your own terminal.
 
 CommandDeck makes the Windows command line easier to use without replacing it:
 
@@ -32,7 +32,11 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 npm run tauri build    # release build + NSIS and MSI installers in src-tauri/target/release/bundle/
 ```
 
-Keyboard: `Ctrl+1` Home, `Ctrl+2` CMD, `Ctrl+3` PowerShell, `Ctrl+,` Settings, `Esc` closes the details panel.
+Keyboard: `Ctrl+K` search, `Ctrl+1` Home, `Ctrl+2` CMD, `Ctrl+3` PowerShell, `Ctrl+,` Settings, `Esc` closes panels and dialogs. In search: `Enter` details, `Ctrl+Enter` copy, `Alt+Enter` add to Home.
+
+After changing `catalog/*.json`, run `powershell -NoProfile -File scripts/verify-catalog.ps1`. It checks every entry against this Windows installation and the cited documentation.
+
+Your data is stored in `%APPDATA%\com.cedrickkaneko.commanddeck\commanddeck.db`.
 
 ## Documentation
 

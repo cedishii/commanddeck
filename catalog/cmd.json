@@ -1,0 +1,742 @@
+{
+  "$schema": "./schema/catalog.schema.json",
+  "version": 1,
+  "shell": "cmd",
+  "commands": [
+    {
+      "id": "cmd.ipconfig.all",
+      "name": "View network configuration",
+      "summary": "Shows every network adapter with its IP address, DNS servers, gateway and MAC address.",
+      "category": "networking",
+      "syntax": "ipconfig /all",
+      "aliases": ["ipconfig"],
+      "keywords": ["ip address", "dns server", "gateway", "mac address", "adapter", "network settings", "dhcp"],
+      "tasks": ["what is my ip", "check network settings", "fix internet", "find my mac address"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "whenToUse": "Checking which IP address or DNS server you are using, or finding an adapter's MAC address.",
+        "syntaxParts": [
+          { "part": "ipconfig", "meaning": "Windows IP configuration utility." },
+          { "part": "/all", "meaning": "Full details for every adapter, including disconnected ones." }
+        ],
+        "expectedOutput": "One block per adapter: description, physical (MAC) address, DHCP status, IPv4/IPv6 addresses, subnet mask, default gateway and DNS servers."
+      },
+      "programs": [{ "kind": "exe", "name": "ipconfig.exe", "flags": ["/all"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ipconfig"]
+    },
+    {
+      "id": "cmd.ipconfig.flushdns",
+      "name": "Flush the DNS cache",
+      "summary": "Clears the list of recently looked-up website addresses so Windows asks the DNS server again.",
+      "category": "networking",
+      "syntax": "ipconfig /flushdns",
+      "aliases": ["flushdns"],
+      "keywords": ["dns", "cache", "clear dns", "reset dns", "website not loading", "name resolution"],
+      "tasks": ["flush dns", "fix internet", "website not loading", "clear dns cache"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": true,
+      "details": {
+        "whenToUse": "A website moved or was fixed but your PC still goes to the old address, or names fail to resolve after a network change.",
+        "syntaxParts": [{ "part": "/flushdns", "meaning": "Empty the DNS client resolver cache." }],
+        "expectedOutput": "\"Successfully flushed the DNS Resolver Cache.\"",
+        "sideEffects": ["The cache refills automatically. The next visit to each site needs one fresh DNS lookup."]
+      },
+      "programs": [{ "kind": "exe", "name": "ipconfig.exe", "flags": ["/flushdns"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ipconfig"]
+    },
+    {
+      "id": "cmd.ping",
+      "name": "Check network connectivity",
+      "summary": "Sends a few echo requests to a host and reports whether it answers and how fast.",
+      "category": "networking",
+      "syntax": "ping google.com",
+      "aliases": ["ping"],
+      "keywords": ["connectivity", "latency", "reachable", "online", "packet loss", "internet test"],
+      "tasks": ["check internet connection", "is the internet working", "fix internet", "test connection to server"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "whenToUse": "You suspect the internet or a specific server is unreachable or slow.",
+        "syntaxParts": [
+          { "part": "ping", "meaning": "Sends ICMP echo requests (4 by default on Windows)." },
+          { "part": "google.com", "meaning": "The host name or IP address to test. Replace it with any host." }
+        ],
+        "expectedOutput": "One \"Reply from …\" line per request with the round-trip time, then a summary of packet loss and min/max/average times.",
+        "cautions": ["Some servers block ping. No reply does not always mean the host is down."]
+      },
+      "programs": [{ "kind": "exe", "name": "PING.EXE" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ping"]
+    },
+    {
+      "id": "cmd.tracert",
+      "name": "Trace the route to a host",
+      "summary": "Lists each network hop between this PC and a host, to find where a connection slows down or stops.",
+      "category": "networking",
+      "syntax": "tracert google.com",
+      "aliases": ["tracert", "traceroute"],
+      "keywords": ["route", "hops", "latency", "where connection fails", "network path"],
+      "tasks": ["find where the connection drops", "slow internet", "fix internet"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "Numbered hops with three response times each and the router name or address. \"Request timed out\" lines are common for routers that don't answer.",
+        "cautions": ["Can take up to a minute or more with many hops."]
+      },
+      "programs": [{ "kind": "exe", "name": "TRACERT.EXE" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tracert"]
+    },
+    {
+      "id": "cmd.nslookup",
+      "name": "Look up a domain's IP address",
+      "summary": "Asks your DNS server which IP address a domain name points to.",
+      "category": "networking",
+      "syntax": "nslookup google.com",
+      "aliases": ["nslookup"],
+      "keywords": ["dns", "lookup", "resolve", "domain", "ip of website", "name server"],
+      "tasks": ["check dns", "what ip does a website have", "fix internet"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "The DNS server that answered, then the name and its addresses. \"Non-authoritative answer\" is normal.",
+        "cautions": ["Running nslookup with no arguments starts an interactive mode; type exit to leave it."]
+      },
+      "programs": [{ "kind": "exe", "name": "nslookup.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/nslookup"]
+    },
+    {
+      "id": "cmd.netstat.ano",
+      "name": "View active network connections",
+      "summary": "Lists open connections and listening ports with the process ID that owns each.",
+      "category": "networking",
+      "syntax": "netstat -ano",
+      "aliases": ["netstat"],
+      "keywords": ["ports", "listening", "connections", "pid", "open ports", "tcp", "udp"],
+      "tasks": ["which program is using a port", "see open ports", "check suspicious connections"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "whenToUse": "Finding which program is using a port, or checking for unexpected connections.",
+        "syntaxParts": [
+          { "part": "-a", "meaning": "All connections and listening ports." },
+          { "part": "-n", "meaning": "Numeric addresses and ports (faster, no name lookups)." },
+          { "part": "-o", "meaning": "Show the owning process ID (PID). Match it in Task Manager or tasklist." }
+        ],
+        "expectedOutput": "Columns: Proto, Local Address, Foreign Address, State, PID."
+      },
+      "programs": [{ "kind": "exe", "name": "NETSTAT.EXE", "flags": ["-a", "-n", "-o"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netstat"]
+    },
+    {
+      "id": "cmd.netstat.b",
+      "name": "View connections with program names",
+      "summary": "Like netstat -ano, but shows the executable name behind each connection.",
+      "category": "networking",
+      "syntax": "netstat -b",
+      "aliases": [],
+      "keywords": ["ports", "program name", "executable", "connections", "which app"],
+      "tasks": ["which program is using a port", "which app is connecting to the internet"],
+      "requiresAdmin": true,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "-b", "meaning": "Show the executable involved in each connection." }],
+        "expectedOutput": "Each connection followed by the program name in square brackets.",
+        "cautions": ["Requires administrator rights. A standard user gets \"The requested operation requires elevation\".", "Can be slow on busy systems."]
+      },
+      "programs": [{ "kind": "exe", "name": "NETSTAT.EXE", "flags": ["-b"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netstat"]
+    },
+    {
+      "id": "cmd.getmac",
+      "name": "Show MAC addresses",
+      "summary": "Lists the physical (MAC) address of each network adapter with the adapter's name.",
+      "category": "networking",
+      "syntax": "getmac /v",
+      "aliases": ["getmac"],
+      "keywords": ["mac address", "physical address", "hardware address", "adapter"],
+      "tasks": ["find my mac address"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "/v", "meaning": "Verbose: include connection name and adapter name." }],
+        "expectedOutput": "Columns: Connection Name, Network Adapter, Physical Address, Transport Name."
+      },
+      "programs": [{ "kind": "exe", "name": "getmac.exe", "flags": ["/V"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/getmac"]
+    },
+    {
+      "id": "cmd.netsh.wlan-profiles",
+      "name": "List saved Wi-Fi networks",
+      "summary": "Shows the Wi-Fi networks this PC has saved profiles for.",
+      "category": "networking",
+      "syntax": "netsh wlan show profiles",
+      "aliases": [],
+      "keywords": ["wifi", "wi-fi", "wireless", "wlan", "saved networks", "ssid"],
+      "tasks": ["see saved wifi networks"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "\"User profiles\" followed by one \"All User Profile : <name>\" line per saved network.",
+        "cautions": ["Shows nothing useful on PCs without a wireless adapter or with the WLAN service stopped."]
+      },
+      "programs": [{ "kind": "exe", "name": "netsh.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/networking/technologies/netsh/netsh-contexts"]
+    },
+    {
+      "id": "cmd.netsh.winsock-reset",
+      "name": "Reset the network stack (Winsock)",
+      "summary": "Restores the Windows Sockets catalog to its default state. A classic fix for broken internet after malware or VPN software.",
+      "category": "networking",
+      "syntax": "netsh winsock reset",
+      "aliases": ["winsock reset"],
+      "keywords": ["winsock", "reset network", "network stack", "repair network", "no internet"],
+      "tasks": ["fix internet", "internet not working", "reset network settings"],
+      "requiresAdmin": true,
+      "risk": "L2",
+      "modifies": true,
+      "details": {
+        "whenToUse": "Internet is broken even though the adapter is connected, and simpler fixes (flushing DNS, restarting the router) didn't help.",
+        "expectedOutput": "\"Successfully reset the Winsock Catalog. You must restart the computer in order to complete the reset.\"",
+        "sideEffects": ["Removes third-party Winsock providers (some VPN, proxy or security software may need reinstalling).", "Takes effect after a restart."]
+      },
+      "programs": [{ "kind": "exe", "name": "netsh.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netsh-winsock"]
+    },
+    {
+      "id": "cmd.dir",
+      "name": "List files and directories",
+      "summary": "Lists the files and folders in the current directory.",
+      "category": "files",
+      "syntax": "dir",
+      "aliases": ["dir", "ls"],
+      "keywords": ["list files", "folder contents", "directory listing"],
+      "tasks": ["see what is in this folder", "list files"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "Name, size and modified date of each item, plus file and folder totals and free space."
+      },
+      "programs": [{ "kind": "cmd-builtin", "name": "dir" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/dir"]
+    },
+    {
+      "id": "cmd.dir.search",
+      "name": "Find files by name",
+      "summary": "Searches the current folder and every subfolder for files matching a pattern, printing full paths.",
+      "category": "files",
+      "syntax": "dir /s /b <Pattern>",
+      "aliases": [],
+      "keywords": ["search", "find file", "locate", "wildcard", "recursive"],
+      "tasks": ["find a file", "search for files by name"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "placeholders": [{ "name": "Pattern", "description": "File name or wildcard, e.g. *.log or report*.docx" }],
+      "details": {
+        "syntaxParts": [
+          { "part": "/s", "meaning": "Include every subdirectory." },
+          { "part": "/b", "meaning": "Bare format: full paths only." },
+          { "part": "<Pattern>", "meaning": "What to look for. * matches any characters." }
+        ],
+        "expectedOutput": "One full path per match, or \"File Not Found\".",
+        "cautions": ["Starting from C:\\ searches the whole drive and can take a long time."]
+      },
+      "programs": [{ "kind": "cmd-builtin", "name": "dir", "flags": ["/S", "/B"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/dir"]
+    },
+    {
+      "id": "cmd.tree",
+      "name": "Show a folder tree",
+      "summary": "Draws the folder structure under the current directory, including file names.",
+      "category": "files",
+      "syntax": "tree /f",
+      "aliases": ["tree"],
+      "keywords": ["folder structure", "hierarchy", "subfolders"],
+      "tasks": ["see folder structure"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "/f", "meaning": "Include the files in each folder, not just folders." }],
+        "cautions": ["Large folders produce very long output."]
+      },
+      "programs": [{ "kind": "exe", "name": "tree.com", "flags": ["/F"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tree"]
+    },
+    {
+      "id": "cmd.robocopy.mirror-copy",
+      "name": "Copy a folder with subfolders",
+      "summary": "Copies a folder and everything inside it, resuming reliably and reporting what was copied.",
+      "category": "files",
+      "syntax": "robocopy \"<Source>\" \"<Destination>\" /E",
+      "aliases": ["robocopy"],
+      "keywords": ["copy folder", "backup", "copy files", "transfer"],
+      "tasks": ["copy a folder", "back up a folder"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [
+        { "name": "Source", "description": "Folder to copy from" },
+        { "name": "Destination", "description": "Folder to copy into (created if missing)" }
+      ],
+      "details": {
+        "syntaxParts": [{ "part": "/E", "meaning": "Copy subdirectories, including empty ones." }],
+        "expectedOutput": "A header, per-file lines, then a summary table of directories, files and bytes copied, skipped or failed.",
+        "sideEffects": ["Overwrites destination files that differ from the source."],
+        "cautions": ["Exit codes 0–7 mean success or partial success. 8 or higher means some copies failed."]
+      },
+      "programs": [{ "kind": "exe", "name": "Robocopy.exe", "flags": ["/E"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/robocopy"]
+    },
+    {
+      "id": "cmd.del",
+      "name": "Delete a file",
+      "summary": "Permanently deletes a file. It does not go to the Recycle Bin.",
+      "category": "files",
+      "syntax": "del \"<File>\"",
+      "aliases": ["del", "erase"],
+      "keywords": ["delete file", "remove file", "erase"],
+      "tasks": ["delete a file"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [{ "name": "File", "description": "Path of the file to delete (wildcards allowed)" }],
+      "details": {
+        "sideEffects": ["The file is removed immediately and does not go to the Recycle Bin."],
+        "cautions": ["Wildcards like *.* can match far more files than intended."]
+      },
+      "programs": [{ "kind": "cmd-builtin", "name": "del" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/del"]
+    },
+    {
+      "id": "cmd.rd.recursive",
+      "name": "Delete a folder and its contents",
+      "summary": "Removes a folder with everything inside it, without asking for confirmation.",
+      "category": "files",
+      "syntax": "rd /s /q \"<Folder>\"",
+      "aliases": ["rd", "rmdir"],
+      "keywords": ["delete folder", "remove directory", "recursive delete"],
+      "tasks": ["delete a folder"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [{ "name": "Folder", "description": "Folder to delete" }],
+      "details": {
+        "syntaxParts": [
+          { "part": "/s", "meaning": "Delete the folder, all files and all subfolders." },
+          { "part": "/q", "meaning": "Quiet: don't ask for confirmation." }
+        ],
+        "sideEffects": ["Everything under the folder is deleted permanently, not moved to the Recycle Bin."],
+        "cautions": ["Double-check the folder path. CommandDeck will treat critical targets (drive roots, Windows, your profile) as high impact."]
+      },
+      "programs": [{ "kind": "cmd-builtin", "name": "rd", "flags": ["/S", "/Q"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/rd"]
+    },
+    {
+      "id": "cmd.where",
+      "name": "Find where a program is installed",
+      "summary": "Shows the full path of a program that runs when you type its name.",
+      "category": "files",
+      "syntax": "where <Program>",
+      "aliases": ["where", "which"],
+      "keywords": ["path", "executable location", "which", "find program"],
+      "tasks": ["where is a program installed", "which version of a program runs"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "placeholders": [{ "name": "Program", "description": "Program name, e.g. git or python" }],
+      "details": {
+        "expectedOutput": "One path per match in PATH order, or \"INFO: Could not find files for the given pattern(s).\""
+      },
+      "programs": [{ "kind": "exe", "name": "where.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/where"]
+    },
+    {
+      "id": "cmd.systeminfo",
+      "name": "Show system information",
+      "summary": "Windows version, install date, boot time, memory, installed updates and network cards.",
+      "category": "system-info",
+      "syntax": "systeminfo",
+      "aliases": ["systeminfo"],
+      "keywords": ["windows version", "os version", "memory", "ram", "boot time", "hotfixes", "build number"],
+      "tasks": ["what version of windows do i have", "how much ram do i have", "when did the pc last restart"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "A list of labeled properties: OS Name, OS Version, System Boot Time, Total Physical Memory, Hotfix(s) and more.",
+        "cautions": ["Can take several seconds while it gathers data."]
+      },
+      "programs": [{ "kind": "exe", "name": "systeminfo.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/systeminfo"]
+    },
+    {
+      "id": "cmd.whoami.all",
+      "name": "Show my user, groups and privileges",
+      "summary": "Shows the current account, its security groups (including whether it is an administrator) and its privileges.",
+      "category": "system-info",
+      "syntax": "whoami /all",
+      "aliases": ["whoami"],
+      "keywords": ["current user", "groups", "privileges", "administrator", "account", "sid"],
+      "tasks": ["am i an administrator", "which user am i"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "/all", "meaning": "User, SID, groups and privileges of the current access token." }],
+        "expectedOutput": "Sections: USER INFORMATION, GROUP INFORMATION, PRIVILEGES INFORMATION. A \"High Mandatory Level\" label means the window is elevated."
+      },
+      "programs": [{ "kind": "exe", "name": "whoami.exe", "flags": ["/ALL"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/whoami"]
+    },
+    {
+      "id": "cmd.tasklist",
+      "name": "List running processes",
+      "summary": "Shows running programs with their process ID and memory use.",
+      "category": "processes",
+      "syntax": "tasklist",
+      "aliases": ["tasklist", "ps"],
+      "keywords": ["processes", "running programs", "pid", "memory usage", "task manager"],
+      "tasks": ["see running applications", "what programs are running", "find a process id"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "Columns: Image Name, PID, Session Name, Session#, Mem Usage."
+      },
+      "programs": [{ "kind": "exe", "name": "tasklist.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tasklist"]
+    },
+    {
+      "id": "cmd.taskkill.image",
+      "name": "Force-close a program",
+      "summary": "Ends every process with the given program name, even if it is not responding.",
+      "category": "processes",
+      "syntax": "taskkill /IM <ImageName> /F",
+      "aliases": ["taskkill", "kill"],
+      "keywords": ["kill", "end task", "close program", "frozen", "not responding", "stop process"],
+      "tasks": ["close a frozen program", "kill a process"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [{ "name": "ImageName", "description": "Program file name, e.g. notepad.exe" }],
+      "details": {
+        "syntaxParts": [
+          { "part": "/IM", "meaning": "Select processes by image (file) name." },
+          { "part": "/F", "meaning": "Force termination." }
+        ],
+        "sideEffects": ["Unsaved work in that program is lost."],
+        "cautions": ["Ends every instance with that name.", "Processes owned by other users or SYSTEM need administrator rights."]
+      },
+      "programs": [{ "kind": "exe", "name": "taskkill.exe", "flags": ["/IM", "/F"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill"]
+    },
+    {
+      "id": "cmd.sfc.scannow",
+      "name": "Scan and repair system files",
+      "summary": "Checks protected Windows system files and replaces corrupted ones from a cached copy.",
+      "category": "troubleshooting",
+      "syntax": "sfc /scannow",
+      "aliases": ["sfc"],
+      "keywords": ["system file checker", "corrupt files", "repair windows", "integrity"],
+      "tasks": ["repair windows", "fix corrupted system files", "windows crashing"],
+      "requiresAdmin": true,
+      "risk": "L2",
+      "modifies": true,
+      "details": {
+        "whenToUse": "Windows behaves oddly or crashes and you suspect damaged system files.",
+        "expectedOutput": "A progress percentage, then one of: no integrity violations found, corrupt files found and repaired, or corrupt files found that could not be repaired.",
+        "sideEffects": ["May replace corrupted system files."],
+        "cautions": ["Takes several minutes.", "If it cannot repair files, run DISM /RestoreHealth first and then sfc again."]
+      },
+      "programs": [{ "kind": "exe", "name": "sfc.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/sfc"]
+    },
+    {
+      "id": "cmd.dism.restorehealth",
+      "name": "Repair the Windows image",
+      "summary": "Repairs the Windows component store, using Windows Update as the source, so system repairs can succeed.",
+      "category": "troubleshooting",
+      "syntax": "DISM /Online /Cleanup-Image /RestoreHealth",
+      "aliases": ["dism"],
+      "keywords": ["component store", "repair windows", "image health", "corruption"],
+      "tasks": ["repair windows", "sfc could not repair files"],
+      "requiresAdmin": true,
+      "risk": "L2",
+      "modifies": true,
+      "details": {
+        "syntaxParts": [
+          { "part": "/Online", "meaning": "Act on the running Windows installation." },
+          { "part": "/Cleanup-Image /RestoreHealth", "meaning": "Scan for corruption and repair it." }
+        ],
+        "expectedOutput": "A progress bar, then \"The restore operation completed successfully.\"",
+        "sideEffects": ["May download repair files from Windows Update."],
+        "cautions": ["Can take 10–30 minutes and may appear stuck at 20% or 62%. That is normal."]
+      },
+      "programs": [{ "kind": "exe", "name": "Dism.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/repair-a-windows-image"]
+    },
+    {
+      "id": "cmd.chkdsk.status",
+      "name": "Check a drive for errors (read-only)",
+      "summary": "Scans a drive's file system and reports problems without fixing anything.",
+      "category": "troubleshooting",
+      "syntax": "chkdsk C:",
+      "aliases": ["chkdsk"],
+      "keywords": ["disk errors", "file system", "bad sectors", "drive health", "check disk"],
+      "tasks": ["check drive for errors"],
+      "requiresAdmin": true,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "C:", "meaning": "The drive to check. Without /f, chkdsk only reports." }],
+        "expectedOutput": "Stage-by-stage progress, then \"Windows has scanned the file system and found no problems\" or a list of issues.",
+        "cautions": ["Fixing errors needs chkdsk /f, which may require a restart for the system drive."]
+      },
+      "programs": [{ "kind": "exe", "name": "chkdsk.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/chkdsk"]
+    },
+    {
+      "id": "cmd.shutdown.restart-now",
+      "name": "Restart the computer now",
+      "summary": "Restarts Windows immediately, with no countdown.",
+      "category": "troubleshooting",
+      "syntax": "shutdown /r /t 0",
+      "aliases": ["restart", "reboot"],
+      "keywords": ["restart", "reboot", "shutdown"],
+      "tasks": ["restart the pc"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "details": {
+        "syntaxParts": [
+          { "part": "/r", "meaning": "Restart after shutting down." },
+          { "part": "/t 0", "meaning": "Wait 0 seconds before acting." }
+        ],
+        "sideEffects": ["All programs close. Unsaved work may be lost."]
+      },
+      "programs": [{ "kind": "exe", "name": "shutdown.exe", "flags": ["/r", "/t"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/shutdown"]
+    },
+    {
+      "id": "cmd.fsutil.diskfree",
+      "name": "Show free space on a drive",
+      "summary": "Reports total, free and available bytes on a volume.",
+      "category": "disk",
+      "syntax": "fsutil volume diskfree C:",
+      "aliases": [],
+      "keywords": ["free space", "disk space", "storage", "capacity", "drive full"],
+      "tasks": ["how much disk space is left", "check free space"],
+      "requiresAdmin": true,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "Total free bytes, total bytes and total quota-free bytes for the volume.",
+        "cautions": ["Requires administrator rights. A standard user gets \"Error 5: Access is denied\". Without admin, use PowerShell Get-Volume instead."]
+      },
+      "programs": [{ "kind": "exe", "name": "fsutil.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/fsutil-volume"]
+    },
+    {
+      "id": "cmd.format.quick",
+      "name": "Format a drive",
+      "summary": "Erases a volume and creates a new NTFS file system on it (quick format).",
+      "category": "disk",
+      "syntax": "format <Drive>: /FS:NTFS /Q",
+      "aliases": ["format"],
+      "keywords": ["format", "erase drive", "wipe", "file system", "usb drive"],
+      "tasks": ["format a usb drive", "erase a drive"],
+      "requiresAdmin": true,
+      "risk": "L3",
+      "modifies": true,
+      "placeholders": [{ "name": "Drive", "description": "Drive letter to format, e.g. E" }],
+      "details": {
+        "syntaxParts": [
+          { "part": "/FS:NTFS", "meaning": "Create an NTFS file system." },
+          { "part": "/Q", "meaning": "Quick format: skip the full surface scan." }
+        ],
+        "sideEffects": ["Every file on the volume becomes inaccessible."],
+        "cautions": ["Irreversible for practical purposes. Double-check the drive letter.", "Windows refuses to format the drive it is running from."]
+      },
+      "programs": [{ "kind": "exe", "name": "format.com", "flags": ["/FS", "/Q"] }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/format"]
+    },
+    {
+      "id": "cmd.net.user",
+      "name": "List local user accounts",
+      "summary": "Shows the user accounts that exist on this computer.",
+      "category": "administration",
+      "syntax": "net user",
+      "aliases": [],
+      "keywords": ["users", "accounts", "local accounts"],
+      "tasks": ["see user accounts"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "A table of account names, then \"The command completed successfully.\"" },
+      "programs": [{ "kind": "exe", "name": "net.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/cc771865(v=ws.11)"]
+    },
+    {
+      "id": "cmd.net.localgroup-admins",
+      "name": "List administrators",
+      "summary": "Shows which accounts belong to the local Administrators group.",
+      "category": "administration",
+      "syntax": "net localgroup Administrators",
+      "aliases": [],
+      "keywords": ["administrators", "admin accounts", "group members"],
+      "tasks": ["who are the administrators"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "Alias name, comment, then the member list." },
+      "programs": [{ "kind": "exe", "name": "net.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/cc725622(v=ws.11)"]
+    },
+    {
+      "id": "cmd.sc.query",
+      "name": "List running services",
+      "summary": "Shows active Windows services with their state.",
+      "category": "administration",
+      "syntax": "sc query",
+      "aliases": ["sc"],
+      "keywords": ["services", "service status", "running services"],
+      "tasks": ["see running services"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "One block per running service: SERVICE_NAME, DISPLAY_NAME, TYPE, STATE.",
+        "cautions": ["In PowerShell, sc is an alias for Set-Content. Type sc.exe there instead."]
+      },
+      "programs": [{ "kind": "exe", "name": "sc.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/sc-query"]
+    },
+    {
+      "id": "cmd.net.stop",
+      "name": "Stop a service",
+      "summary": "Stops a running Windows service by name.",
+      "category": "administration",
+      "syntax": "net stop \"<ServiceName>\"",
+      "aliases": [],
+      "keywords": ["stop service", "disable service temporarily"],
+      "tasks": ["stop a service"],
+      "requiresAdmin": true,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [{ "name": "ServiceName", "description": "Service name or display name, e.g. Spooler" }],
+      "details": {
+        "sideEffects": ["Features depending on the service stop working until it is started again."],
+        "cautions": ["Dependent services may be stopped too. net asks before stopping them."]
+      },
+      "programs": [{ "kind": "exe", "name": "net.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows/win32/wmisdk/starting-and-stopping-the-wmi-service"]
+    },
+    {
+      "id": "cmd.netsh.firewall-show",
+      "name": "Show firewall status",
+      "summary": "Shows whether Windows Firewall is on for the domain, private and public profiles, and their settings.",
+      "category": "security",
+      "syntax": "netsh advfirewall show allprofiles",
+      "aliases": [],
+      "keywords": ["firewall", "firewall status", "windows defender firewall", "profiles"],
+      "tasks": ["is the firewall on"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "For each profile: State ON/OFF, firewall policy, logging settings." },
+      "programs": [{ "kind": "exe", "name": "netsh.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/netsh-advfirewall-firewall-control-firewall-behavior"]
+    },
+    {
+      "id": "cmd.manage-bde.status",
+      "name": "Show BitLocker status",
+      "summary": "Reports whether each drive is encrypted with BitLocker and how protection is configured.",
+      "category": "security",
+      "syntax": "manage-bde -status",
+      "aliases": ["bitlocker"],
+      "keywords": ["bitlocker", "encryption", "encrypted drive", "protection status"],
+      "tasks": ["is my drive encrypted"],
+      "requiresAdmin": true,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "expectedOutput": "Per volume: size, conversion status, percentage encrypted, protection status, key protectors.",
+        "cautions": ["Requires administrator rights. A standard user gets an access-denied error."]
+      },
+      "programs": [{ "kind": "exe", "name": "manage-bde.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/manage-bde-status"]
+    },
+    {
+      "id": "cmd.set",
+      "name": "List environment variables",
+      "summary": "Shows every environment variable in the current session and its value.",
+      "category": "environment",
+      "syntax": "set",
+      "aliases": ["env"],
+      "keywords": ["environment variables", "env vars", "variables"],
+      "tasks": ["see environment variables"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": { "expectedOutput": "One NAME=value line per variable." },
+      "programs": [{ "kind": "cmd-builtin", "name": "set" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/set_1"]
+    },
+    {
+      "id": "cmd.echo.path",
+      "name": "Show the PATH variable",
+      "summary": "Prints the folders Windows searches when you type a program name.",
+      "category": "environment",
+      "syntax": "echo %PATH%",
+      "aliases": [],
+      "keywords": ["path", "environment", "search path"],
+      "tasks": ["see the path variable", "why is a program not found"],
+      "requiresAdmin": false,
+      "risk": "L1",
+      "modifies": false,
+      "details": {
+        "syntaxParts": [{ "part": "%PATH%", "meaning": "CMD expands %NAME% to the variable's value." }],
+        "expectedOutput": "One long line of folders separated by semicolons."
+      },
+      "programs": [{ "kind": "cmd-builtin", "name": "echo" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/echo"]
+    },
+    {
+      "id": "cmd.setx.user",
+      "name": "Set a permanent user variable",
+      "summary": "Creates or changes an environment variable for your account that persists across sessions.",
+      "category": "environment",
+      "syntax": "setx <Name> \"<Value>\"",
+      "aliases": ["setx"],
+      "keywords": ["environment variable", "set variable permanently", "persist"],
+      "tasks": ["set an environment variable permanently"],
+      "requiresAdmin": false,
+      "risk": "L2",
+      "modifies": true,
+      "placeholders": [
+        { "name": "Name", "description": "Variable name" },
+        { "name": "Value", "description": "Variable value" }
+      ],
+      "details": {
+        "sideEffects": ["Writes to your user environment in the registry."],
+        "cautions": [
+          "Only new windows see the change, not the current one.",
+          "Values longer than 1024 characters are truncated. Never use setx to modify PATH from %PATH%."
+        ]
+      },
+      "programs": [{ "kind": "exe", "name": "setx.exe" }],
+      "sources": ["https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/setx"]
+    }
+  ]
+}
